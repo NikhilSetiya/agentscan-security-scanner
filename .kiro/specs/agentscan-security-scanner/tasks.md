@@ -35,7 +35,7 @@
   - Write comprehensive unit tests with mocked Docker execution
   - _Requirements: 1.1, 1.2, 2.1, 10.1_
 
-- [ ] 5. Build orchestration service core
+- [x] 5. Build orchestration service core
 
   - Implement OrchestrationService interface with SubmitScan, GetScanStatus methods
   - Create agent lifecycle management (start, monitor, cleanup)
@@ -44,7 +44,7 @@
   - Write integration tests for orchestration workflows
   - _Requirements: 1.1, 3.1, 3.4, 10.2_
 
-- [ ] 6. Implement consensus engine foundation
+- [x] 6. Implement consensus engine foundation
 
   - Create ConsensusEngine interface for result deduplication
   - Implement basic consensus scoring algorithm (3+ tools = high confidence)

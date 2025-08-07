@@ -1,0 +1,124 @@
+version: '3.8'
+
+services:
+  # PostgreSQL database
+  postgres:
+    image: postgres:15-alpine
+    container_name: agentscan-postgres
+    environment:
+      POSTGRES_DB: agentscan
+      POSTGRES_USER: agentscan
+      POSTGRES_PASSWORD: agentscan_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentscan -d agentscan"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for job queues and caching
+  redis:
+    image: redis:7-alpine
+    container_name: agentscan-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # AgentScan API server
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: agentscan-api
+    ports:
+      - "8080:8080"
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=agentscan
+      - DB_USER=agentscan
+      - DB_PASSWORD=agentscan_dev_password
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=dev_jwt_secret_change_in_production
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_SECRET=${GITHUB_SECRET}
+      - LOG_LEVEL=debug
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./tmp:/tmp/agentscan
+    restart: unless-stopped
+
+  # AgentScan orchestrator
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile.orchestrator
+    container_name: agentscan-orchestrator
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=agentscan
+      - DB_USER=agentscan
+      - DB_PASSWORD=agentscan_dev_password
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - AGENTS_MAX_CONCURRENT=5
+      - AGENTS_DEFAULT_TIMEOUT=10m
+      - LOG_LEVEL=debug
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./tmp:/tmp/agentscan
+    restart: unless-stopped
+
+  # Web frontend (React)
+  web:
+    build:
+      context: ./web/frontend
+      dockerfile: Dockerfile
+    container_name: agentscan-web
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8080
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # Development tools
+  adminer:
+    image: adminer:4.8.1
+    container_name: agentscan-adminer
+    ports:
+      - "8081:8080"
+    environment:
+      - ADMINER_DEFAULT_SERVER=postgres
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: agentscan-network

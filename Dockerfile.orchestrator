@@ -1,0 +1,51 @@
+# Build stage
+FROM golang:1.21-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache git ca-certificates tzdata
+
+# Set working directory
+WORKDIR /app
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the application
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o orchestrator ./cmd/orchestrator
+
+# Final stage
+FROM alpine:latest
+
+# Install runtime dependencies including Docker CLI
+RUN apk --no-cache add ca-certificates tzdata docker-cli
+
+# Create non-root user
+RUN addgroup -g 1001 -S agentscan && \
+    adduser -u 1001 -S agentscan -G agentscan
+
+# Add user to docker group for Docker socket access
+RUN addgroup agentscan docker
+
+# Set working directory
+WORKDIR /app
+
+# Copy binary from builder stage
+COPY --from=builder /app/orchestrator .
+
+# Create temp directory
+RUN mkdir -p /tmp/agentscan && chown -R agentscan:agentscan /tmp/agentscan
+
+# Change ownership
+RUN chown -R agentscan:agentscan /app
+
+# Switch to non-root user
+USER agentscan
+
+# Run the application
+CMD ["./orchestrator"]
