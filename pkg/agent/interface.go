@@ -96,14 +96,19 @@ const (
 	CategoryCommandInjection  VulnCategory = "command_injection"
 	CategoryInsecureDeserialization VulnCategory = "insecure_deserialization"
 	CategoryVulnerableDependency    VulnCategory = "vulnerable_dependency"
+	CategoryDependencyVuln    VulnCategory = "dependency_vulnerability"
+	CategoryOutdatedDeps      VulnCategory = "outdated_dependencies"
+	CategoryLicenseIssue      VulnCategory = "license_issue"
+	CategorySupplyChain       VulnCategory = "supply_chain"
 	CategoryMisconfiguration  VulnCategory = "misconfiguration"
 	CategoryOther             VulnCategory = "other"
 )
 
 // FixSuggestion contains suggested fixes for a finding
 type FixSuggestion struct {
-	Description string `json:"description"`
-	Code        string `json:"code,omitempty"`
+	Description string   `json:"description"`
+	Suggestion  string   `json:"suggestion,omitempty"`
+	Code        string   `json:"code,omitempty"`
 	References  []string `json:"references,omitempty"`
 }
 

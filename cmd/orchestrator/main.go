@@ -10,6 +10,9 @@ import (
 
 	"github.com/agentscan/agentscan/agents/sast/bandit"
 	"github.com/agentscan/agentscan/agents/sast/semgrep"
+	"github.com/agentscan/agentscan/agents/sca/govulncheck"
+	"github.com/agentscan/agentscan/agents/sca/npm"
+	"github.com/agentscan/agentscan/agents/sca/pip"
 	"github.com/agentscan/agentscan/internal/orchestrator"
 	"github.com/agentscan/agentscan/internal/queue"
 	"github.com/agentscan/agentscan/pkg/config"
@@ -94,23 +97,40 @@ func main() {
 
 // registerAgents registers all available security agents
 func registerAgents(agentManager *orchestrator.AgentManager) error {
-	// Register Semgrep SAST agent
+	// Register SAST agents
 	semgrepAgent := semgrep.NewAgent()
 	if err := agentManager.RegisterAgent("semgrep", semgrepAgent); err != nil {
 		return err
 	}
 	log.Println("Registered Semgrep SAST agent")
 
-	// Register Bandit Python agent
 	banditAgent := bandit.NewAgent()
 	if err := agentManager.RegisterAgent("bandit", banditAgent); err != nil {
 		return err
 	}
 	log.Println("Registered Bandit Python agent")
 
+	// Register SCA (dependency scanning) agents
+	npmAgent := npm.NewAgent()
+	if err := agentManager.RegisterAgent("npm-audit", npmAgent); err != nil {
+		return err
+	}
+	log.Println("Registered npm audit SCA agent")
+
+	pipAgent := pip.NewAgent()
+	if err := agentManager.RegisterAgent("pip-audit", pipAgent); err != nil {
+		return err
+	}
+	log.Println("Registered pip-audit SCA agent")
+
+	govulncheckAgent := govulncheck.NewAgent()
+	if err := agentManager.RegisterAgent("govulncheck", govulncheckAgent); err != nil {
+		return err
+	}
+	log.Println("Registered govulncheck SCA agent")
+
 	// TODO: Register additional agents as they are implemented
 	// - ESLint Security agent
-	// - Dependency scanning agents
 	// - Secret scanning agents
 
 	return nil

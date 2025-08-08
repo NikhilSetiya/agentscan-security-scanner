@@ -97,7 +97,7 @@
   - Test end-to-end Python scanning workflow through orchestrator
   - _Requirements: 1.1, 2.2, 10.1_
 
-- [ ] 12. Implement dependency scanning capabilities
+- [x] 12. Implement dependency scanning capabilities
 
   - Create SCA agent for npm audit (JavaScript/Node.js dependencies)
   - Add pip-audit agent for Python dependency vulnerabilities
