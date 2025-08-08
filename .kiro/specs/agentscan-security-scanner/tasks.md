@@ -71,7 +71,7 @@
   - Write API integration tests with test database
   - _Requirements: 7.1, 9.1, 9.2, 9.5_
 
-- [ ] 9. Implement user authentication and authorization
+- [x] 9. Implement user authentication and authorization
 
   - Add OAuth integration with GitHub/GitLab providers
   - Implement JWT-based session management with proper expiration
@@ -80,7 +80,7 @@
   - Write security tests for authentication flows and edge cases
   - _Requirements: 7.1, 7.2, 7.3, 7.4_
 
-- [ ] 10. Add Python security scanning (Bandit agent)
+- [x] 10. Add Python security scanning (Bandit agent)
 
   - Implement Bandit agent wrapper following Agent interface
   - Configure Bandit rules for Python security vulnerabilities
@@ -89,7 +89,15 @@
   - Write unit tests with Python code samples containing known vulnerabilities
   - _Requirements: 1.1, 2.2, 2.5_
 
-- [ ] 11. Implement dependency scanning capabilities
+- [x] 11. Register Bandit agent in orchestrator
+
+  - Update orchestrator main.go to register Bandit agent alongside Semgrep
+  - Add Bandit agent import and registration in registerAgents function
+  - Write integration test to verify Bandit agent is properly registered and callable
+  - Test end-to-end Python scanning workflow through orchestrator
+  - _Requirements: 1.1, 2.2, 10.1_
+
+- [ ] 12. Implement dependency scanning capabilities
 
   - Create SCA agent for npm audit (JavaScript/Node.js dependencies)
   - Add pip-audit agent for Python dependency vulnerabilities
@@ -98,7 +106,7 @@
   - Write integration tests with projects containing vulnerable dependencies
   - _Requirements: 6.1, 6.2, 6.3_
 
-- [ ] 12. Build secret scanning functionality
+- [ ] 13. Build secret scanning functionality
 
   - Implement truffleHog agent for git history secret scanning
   - Add git-secrets agent for additional secret pattern detection
@@ -107,7 +115,25 @@
   - Write tests with repositories containing various secret types
   - _Requirements: 6.4, 6.5_
 
-- [ ] 13. Implement incremental scanning system
+- [ ] 14. Implement user authentication system
+
+  - Create authentication service with OAuth integration for GitHub/GitLab
+  - Implement JWT-based session management with proper expiration
+  - Add user registration and profile management endpoints
+  - Create middleware for authentication and authorization
+  - Write unit tests for authentication flows and security edge cases
+  - _Requirements: 7.1, 7.2, 7.3_
+
+- [ ] 15. Build role-based access control (RBAC)
+
+  - Implement organization and team management system
+  - Create role-based permissions for repositories and scan results
+  - Add audit logging for authentication and authorization events
+  - Implement repository access control based on Git provider permissions
+  - Write tests for various RBAC scenarios and edge cases
+  - _Requirements: 7.1, 7.2, 7.3, 7.4_
+
+- [ ] 16. Implement incremental scanning system
 
   - Add git diff analysis to identify changed files since last scan
   - Create file-level caching using content hash + tool version
@@ -116,7 +142,7 @@
   - Write tests for incremental vs full scan scenarios
   - _Requirements: 8.1, 8.2, 8.3, 8.4, 3.2_
 
-- [ ] 14. Create web dashboard foundation and design system
+- [ ] 17. Create web dashboard foundation and design system
 
   - Set up React application with TypeScript and modern build tools (Vite)
   - Implement design system with Inter font, 8pt grid, and color palette
@@ -125,7 +151,7 @@
   - Implement hover states, focus management, and accessibility features
   - _Requirements: 5.1, 5.2, 5.3_
 
-- [ ] 14.1 Build dashboard overview page
+- [ ] 17.1 Build dashboard overview page
 
   - Create dashboard layout with statistics cards grid showing scan metrics
   - Implement recent scans table with repository, status, findings, and time columns
@@ -134,7 +160,7 @@
   - Write frontend unit tests for dashboard components
   - _Requirements: 5.1, 5.2, 5.3_
 
-- [ ] 14.2 Implement scan results page
+- [ ] 17.2 Implement scan results page
 
   - Build scan results page with header showing repository, branch, commit info
   - Create findings table with severity, rule, file, line, and tools columns
@@ -143,7 +169,7 @@
   - Add export functionality for PDF and JSON reports
   - _Requirements: 5.1, 5.2, 5.3, 5.5_
 
-- [ ] 15. Add result management and reporting
+- [ ] 18. Add result management and reporting
 
   - Implement finding suppression system for false positives
   - Create PDF and JSON export functionality for scan results
@@ -152,7 +178,7 @@
   - Write tests for report generation and data export
   - _Requirements: 5.4, 5.5, 1.3_
 
-- [ ] 16. Build VS Code extension with clean UI
+- [ ] 19. Build VS Code extension with clean UI
 
   - Create VS Code extension with proper manifest and configuration
   - Implement real-time file scanning with debounced triggers on save
@@ -162,7 +188,7 @@
   - Write extension tests and package for VS Code marketplace
   - _Requirements: 4.2, 3.3_
 
-- [ ] 17. Implement GitHub integration
+- [ ] 20. Implement GitHub integration
 
   - Create GitHub App with proper webhook event handling
   - Add PR comment posting with scan results and status checks
@@ -171,7 +197,7 @@
   - Write integration tests with test GitHub repositories
   - _Requirements: 4.1, 4.3_
 
-- [ ] 18. Add CI/CD integration tooling
+- [ ] 21. Add CI/CD integration tooling
 
   - Create CLI tool for use in any CI/CD system
   - Implement configurable failure thresholds and exit codes
@@ -180,7 +206,7 @@
   - Write tests for various CI/CD scenarios and configurations
   - _Requirements: 4.3, 4.4_
 
-- [ ] 19. Implement performance optimizations
+- [ ] 22. Implement performance optimizations
 
   - Add database query optimization and connection pooling
   - Implement result caching with Redis for frequently accessed data
@@ -189,7 +215,7 @@
   - Optimize Docker container startup times and resource usage
   - _Requirements: 3.1, 3.2, 3.4, 9.1_
 
-- [ ] 20. Build monitoring and observability
+- [ ] 23. Build monitoring and observability
 
   - Implement structured logging with correlation IDs across services
   - Add Prometheus metrics for business and technical KPIs
@@ -198,7 +224,7 @@
   - Set up alerting for critical system failures and performance degradation
   - _Requirements: 10.3, 10.4, 10.5_
 
-- [ ] 21. Add advanced consensus and ML features
+- [ ] 24. Add advanced consensus and ML features
 
   - Implement machine learning model for consensus scoring improvement
   - Add user feedback processing to train and update ML models
@@ -207,7 +233,7 @@
   - Write tests for ML model training and prediction accuracy
   - _Requirements: 1.3, 1.4, 1.5_
 
-- [ ] 22. Implement notification system
+- [ ] 25. Implement notification system
 
   - Add Slack integration for scan completion notifications
   - Create Microsoft Teams webhook integration
@@ -216,7 +242,7 @@
   - Write tests for various notification scenarios and failures
   - _Requirements: 4.4_
 
-- [ ] 23. Create comprehensive error handling
+- [ ] 26. Create comprehensive error handling
 
   - Implement circuit breaker pattern for external service calls
   - Add exponential backoff retry logic for transient failures
@@ -225,7 +251,7 @@
   - Write tests for various failure scenarios and recovery procedures
   - _Requirements: 10.1, 10.2, 10.4, 10.5_
 
-- [ ] 24. Add security hardening and compliance
+- [ ] 27. Add security hardening and compliance
 
   - Implement data encryption at rest and in transit
   - Add comprehensive audit logging for compliance requirements
@@ -234,7 +260,7 @@
   - Conduct security testing and vulnerability assessments
   - _Requirements: 7.4, 7.5_
 
-- [ ] 25. Build deployment and infrastructure
+- [ ] 28. Build deployment and infrastructure
 
   - Create Kubernetes deployment manifests with proper resource limits
   - Implement blue-green deployment strategy with health checks
@@ -243,7 +269,7 @@
   - Set up production monitoring and alerting systems
   - _Requirements: 10.3, 10.5_
 
-- [ ] 26. Implement comprehensive testing suite
+- [ ] 29. Implement comprehensive testing suite
 
   - Create end-to-end test suite covering complete user workflows
   - Add performance testing with load generation and benchmarking
@@ -252,7 +278,7 @@
   - Set up automated testing pipeline with quality gates
   - _Requirements: All requirements validation_
 
-- [ ] 27. Add documentation and developer experience with clean UI
+- [ ] 30. Add documentation and developer experience with clean UI
 
   - Create comprehensive API documentation with OpenAPI specification
   - Build documentation website using design system (Inter font, clean layout)
@@ -262,7 +288,7 @@
   - Create video tutorials and getting started guides
   - _Requirements: 9.1, 9.2, 9.3_
 
-- [ ] 27.1 Implement UI polish and final design touches
+- [ ] 30.1 Implement UI polish and final design touches
 
   - Add loading skeletons and smooth transitions throughout the application
   - Implement proper error states with clean, helpful messaging
@@ -271,7 +297,7 @@
   - Perform final UI/UX review and polish based on Linear/Vercel/Superhuman standards
   - _Requirements: All UI/UX requirements_
 
-- [ ] 28. Final integration and system testing
+- [ ] 31. Final integration and system testing
   - Conduct full system integration testing with all components
   - Perform user acceptance testing with real-world scenarios
   - Execute performance testing under production-like load

@@ -20,12 +20,17 @@ func NewRouter(cfg *config.Config, db *database.DB, redis *queue.RedisClient, re
 
 	router := gin.New()
 
+	// Create services
+	auditLogger := NewAuditLogger(repos)
+	_ = NewRBACService(repos) // TODO: Use RBAC service in protected routes
+
 	// Add middleware
 	router.Use(RequestIDMiddleware())
 	router.Use(LoggingMiddleware())
 	router.Use(ErrorHandlingMiddleware())
 	router.Use(CORSMiddleware())
 	router.Use(SecurityHeadersMiddleware())
+	router.Use(auditLogger.AuditMiddleware())
 	router.Use(RateLimitMiddleware())
 
 	// Health check endpoint (no auth required)
@@ -42,7 +47,7 @@ func NewRouter(cfg *config.Config, db *database.DB, redis *queue.RedisClient, re
 	})
 
 	// Create handlers
-	authHandler := NewAuthHandler(cfg, repos)
+	authHandler := NewAuthHandler(cfg, repos, auditLogger)
 	scanHandler := NewScanHandler(repos, orch, q)
 	findingHandler := NewFindingHandler(repos)
 
@@ -54,6 +59,8 @@ func NewRouter(cfg *config.Config, db *database.DB, redis *queue.RedisClient, re
 		{
 			auth.GET("/github/url", authHandler.GetAuthURL)
 			auth.POST("/github/callback", authHandler.LoginWithGitHub)
+			auth.GET("/gitlab/url", authHandler.GetGitLabAuthURL)
+			auth.POST("/gitlab/callback", authHandler.LoginWithGitLab)
 			auth.POST("/logout", authHandler.Logout)
 		}
 

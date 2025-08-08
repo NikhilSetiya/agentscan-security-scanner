@@ -45,12 +45,18 @@ type ErrorResponse struct {
 
 // SuccessResponse sends a successful response
 func SuccessResponse(c *gin.Context, data interface{}) {
-	requestID, _ := c.Get("request_id")
+	requestID, exists := c.Get("request_id")
+	requestIDStr := ""
+	if exists {
+		if id, ok := requestID.(string); ok {
+			requestIDStr = id
+		}
+	}
 	
 	response := APIResponse{
 		Success:   true,
 		Data:      data,
-		RequestID: requestID.(string),
+		RequestID: requestIDStr,
 		Timestamp: time.Now(),
 	}
 	
@@ -59,13 +65,19 @@ func SuccessResponse(c *gin.Context, data interface{}) {
 
 // SuccessResponseWithMeta sends a successful response with metadata
 func SuccessResponseWithMeta(c *gin.Context, data interface{}, meta *Meta) {
-	requestID, _ := c.Get("request_id")
+	requestID, exists := c.Get("request_id")
+	requestIDStr := ""
+	if exists {
+		if id, ok := requestID.(string); ok {
+			requestIDStr = id
+		}
+	}
 	
 	response := APIResponse{
 		Success:   true,
 		Data:      data,
 		Meta:      meta,
-		RequestID: requestID.(string),
+		RequestID: requestIDStr,
 		Timestamp: time.Now(),
 	}
 	
@@ -74,12 +86,18 @@ func SuccessResponseWithMeta(c *gin.Context, data interface{}, meta *Meta) {
 
 // CreatedResponse sends a 201 Created response
 func CreatedResponse(c *gin.Context, data interface{}) {
-	requestID, _ := c.Get("request_id")
+	requestID, exists := c.Get("request_id")
+	requestIDStr := ""
+	if exists {
+		if id, ok := requestID.(string); ok {
+			requestIDStr = id
+		}
+	}
 	
 	response := APIResponse{
 		Success:   true,
 		Data:      data,
-		RequestID: requestID.(string),
+		RequestID: requestIDStr,
 		Timestamp: time.Now(),
 	}
 	
@@ -88,7 +106,13 @@ func CreatedResponse(c *gin.Context, data interface{}) {
 
 // ErrorResponseFromError sends an error response based on the error type
 func ErrorResponseFromError(c *gin.Context, err error) {
-	requestID, _ := c.Get("request_id")
+	requestID, exists := c.Get("request_id")
+	requestIDStr := ""
+	if exists {
+		if id, ok := requestID.(string); ok {
+			requestIDStr = id
+		}
+	}
 	
 	var statusCode int
 	var apiError *APIError
@@ -141,7 +165,7 @@ func ErrorResponseFromError(c *gin.Context, err error) {
 	response := APIResponse{
 		Success:   false,
 		Error:     apiError,
-		RequestID: requestID.(string),
+		RequestID: requestIDStr,
 		Timestamp: time.Now(),
 	}
 	
@@ -150,7 +174,13 @@ func ErrorResponseFromError(c *gin.Context, err error) {
 
 // BadRequestResponse sends a 400 Bad Request response
 func BadRequestResponse(c *gin.Context, message string) {
-	requestID, _ := c.Get("request_id")
+	requestID, exists := c.Get("request_id")
+	requestIDStr := ""
+	if exists {
+		if id, ok := requestID.(string); ok {
+			requestIDStr = id
+		}
+	}
 	
 	response := APIResponse{
 		Success: false,
@@ -158,7 +188,7 @@ func BadRequestResponse(c *gin.Context, message string) {
 			Code:    "bad_request",
 			Message: message,
 		},
-		RequestID: requestID.(string),
+		RequestID: requestIDStr,
 		Timestamp: time.Now(),
 	}
 	
@@ -167,7 +197,13 @@ func BadRequestResponse(c *gin.Context, message string) {
 
 // UnauthorizedResponse sends a 401 Unauthorized response
 func UnauthorizedResponse(c *gin.Context, message string) {
-	requestID, _ := c.Get("request_id")
+	requestID, exists := c.Get("request_id")
+	requestIDStr := ""
+	if exists {
+		if id, ok := requestID.(string); ok {
+			requestIDStr = id
+		}
+	}
 	
 	response := APIResponse{
 		Success: false,
@@ -175,7 +211,7 @@ func UnauthorizedResponse(c *gin.Context, message string) {
 			Code:    "unauthorized",
 			Message: message,
 		},
-		RequestID: requestID.(string),
+		RequestID: requestIDStr,
 		Timestamp: time.Now(),
 	}
 	
@@ -184,7 +220,13 @@ func UnauthorizedResponse(c *gin.Context, message string) {
 
 // ForbiddenResponse sends a 403 Forbidden response
 func ForbiddenResponse(c *gin.Context, message string) {
-	requestID, _ := c.Get("request_id")
+	requestID, exists := c.Get("request_id")
+	requestIDStr := ""
+	if exists {
+		if id, ok := requestID.(string); ok {
+			requestIDStr = id
+		}
+	}
 	
 	response := APIResponse{
 		Success: false,
@@ -192,7 +234,7 @@ func ForbiddenResponse(c *gin.Context, message string) {
 			Code:    "forbidden",
 			Message: message,
 		},
-		RequestID: requestID.(string),
+		RequestID: requestIDStr,
 		Timestamp: time.Now(),
 	}
 	
@@ -201,7 +243,13 @@ func ForbiddenResponse(c *gin.Context, message string) {
 
 // NotFoundResponse sends a 404 Not Found response
 func NotFoundResponse(c *gin.Context, message string) {
-	requestID, _ := c.Get("request_id")
+	requestID, exists := c.Get("request_id")
+	requestIDStr := ""
+	if exists {
+		if id, ok := requestID.(string); ok {
+			requestIDStr = id
+		}
+	}
 	
 	response := APIResponse{
 		Success: false,
@@ -209,7 +257,7 @@ func NotFoundResponse(c *gin.Context, message string) {
 			Code:    "not_found",
 			Message: message,
 		},
-		RequestID: requestID.(string),
+		RequestID: requestIDStr,
 		Timestamp: time.Now(),
 	}
 	
@@ -218,7 +266,13 @@ func NotFoundResponse(c *gin.Context, message string) {
 
 // InternalErrorResponse sends a 500 Internal Server Error response
 func InternalErrorResponse(c *gin.Context, message string) {
-	requestID, _ := c.Get("request_id")
+	requestID, exists := c.Get("request_id")
+	requestIDStr := ""
+	if exists {
+		if id, ok := requestID.(string); ok {
+			requestIDStr = id
+		}
+	}
 	
 	response := APIResponse{
 		Success: false,
@@ -226,7 +280,7 @@ func InternalErrorResponse(c *gin.Context, message string) {
 			Code:    "internal_error",
 			Message: message,
 		},
-		RequestID: requestID.(string),
+		RequestID: requestIDStr,
 		Timestamp: time.Now(),
 	}
 	

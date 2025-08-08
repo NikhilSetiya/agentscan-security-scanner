@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agentscan/agentscan/agents/sast/bandit"
 	"github.com/agentscan/agentscan/agents/sast/semgrep"
 	"github.com/agentscan/agentscan/internal/orchestrator"
 	"github.com/agentscan/agentscan/internal/queue"
@@ -100,9 +101,15 @@ func registerAgents(agentManager *orchestrator.AgentManager) error {
 	}
 	log.Println("Registered Semgrep SAST agent")
 
+	// Register Bandit Python agent
+	banditAgent := bandit.NewAgent()
+	if err := agentManager.RegisterAgent("bandit", banditAgent); err != nil {
+		return err
+	}
+	log.Println("Registered Bandit Python agent")
+
 	// TODO: Register additional agents as they are implemented
 	// - ESLint Security agent
-	// - Bandit Python agent
 	// - Dependency scanning agents
 	// - Secret scanning agents
 
