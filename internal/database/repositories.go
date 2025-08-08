@@ -262,6 +262,90 @@ func (r *ScanJobRepository) SetFailed(ctx context.Context, id uuid.UUID, errorMs
 	return nil
 }
 
+// Update updates a scan job
+func (r *ScanJobRepository) Update(ctx context.Context, job *types.ScanJob) error {
+	query := `
+		UPDATE scan_jobs 
+		SET status = :status, error_message = :error_message, started_at = :started_at, 
+		    completed_at = :completed_at, agents_completed = :agents_completed, 
+		    metadata = :metadata, updated_at = NOW()
+		WHERE id = :id`
+
+	result, err := r.db.NamedExecContext(ctx, query, job)
+	if err != nil {
+		return errors.NewInternalError("failed to update scan job").WithCause(err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return errors.NewInternalError("failed to get rows affected").WithCause(err)
+	}
+
+	if rowsAffected == 0 {
+		return errors.NewNotFoundError("scan job")
+	}
+
+	return nil
+}
+
+// List lists scan jobs with filtering and pagination
+func (r *ScanJobRepository) List(ctx context.Context, filter *ScanJobFilter, pagination *Pagination) ([]*types.ScanJob, int64, error) {
+	var jobs []*types.ScanJob
+	var total int64
+
+	// Build WHERE clause
+	whereClause := "WHERE 1=1"
+	args := make(map[string]interface{})
+	
+	if filter.RepositoryID != nil {
+		whereClause += " AND repository_id = :repository_id"
+		args["repository_id"] = *filter.RepositoryID
+	}
+	
+	if filter.UserID != nil {
+		whereClause += " AND user_id = :user_id"
+		args["user_id"] = *filter.UserID
+	}
+	
+	if filter.Status != "" {
+		whereClause += " AND status = :status"
+		args["status"] = filter.Status
+	}
+	
+	if filter.ScanType != "" {
+		whereClause += " AND scan_type = :scan_type"
+		args["scan_type"] = filter.ScanType
+	}
+
+	// Count total records
+	countQuery := "SELECT COUNT(*) FROM scan_jobs " + whereClause
+	if err := r.db.GetContext(ctx, &total, countQuery, args); err != nil {
+		return nil, 0, errors.NewInternalError("failed to count scan jobs").WithCause(err)
+	}
+
+	// Get paginated results
+	offset := (pagination.Page - 1) * pagination.PageSize
+	query := `SELECT * FROM scan_jobs ` + whereClause + ` ORDER BY created_at DESC LIMIT :limit OFFSET :offset`
+	args["limit"] = pagination.PageSize
+	args["offset"] = offset
+
+	rows, err := r.db.NamedQueryContext(ctx, query, args)
+	if err != nil {
+		return nil, 0, errors.NewInternalError("failed to list scan jobs").WithCause(err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var job types.ScanJob
+		if err := rows.StructScan(&job); err != nil {
+			return nil, 0, errors.NewInternalError("failed to scan scan job").WithCause(err)
+		}
+		jobs = append(jobs, &job)
+	}
+
+	return jobs, total, nil
+}
+
 // ListByRepository lists scan jobs for a repository
 func (r *ScanJobRepository) ListByRepository(ctx context.Context, repoID uuid.UUID, limit, offset int) ([]*types.ScanJob, error) {
 	var jobs []*types.ScanJob
@@ -367,6 +451,69 @@ func (r *FindingRepository) UpdateStatus(ctx context.Context, id uuid.UUID, stat
 	}
 
 	return nil
+}
+
+// List lists findings with filtering and pagination
+func (r *FindingRepository) List(ctx context.Context, filter *FindingFilter, pagination *Pagination) ([]*types.Finding, int64, error) {
+	var findings []*types.Finding
+	var total int64
+
+	// Build WHERE clause
+	whereClause := "WHERE 1=1"
+	args := make(map[string]interface{})
+	
+	if filter.Severity != "" {
+		whereClause += " AND severity = :severity"
+		args["severity"] = filter.Severity
+	}
+	
+	if filter.Tool != "" {
+		whereClause += " AND tool = :tool"
+		args["tool"] = filter.Tool
+	}
+	
+	if filter.Category != "" {
+		whereClause += " AND category = :category"
+		args["category"] = filter.Category
+	}
+	
+	if filter.Status != "" {
+		whereClause += " AND status = :status"
+		args["status"] = filter.Status
+	}
+	
+	if filter.File != "" {
+		whereClause += " AND file_path ILIKE :file_path"
+		args["file_path"] = "%" + filter.File + "%"
+	}
+
+	// Count total records
+	countQuery := "SELECT COUNT(*) FROM findings " + whereClause
+	if err := r.db.GetContext(ctx, &total, countQuery, args); err != nil {
+		return nil, 0, errors.NewInternalError("failed to count findings").WithCause(err)
+	}
+
+	// Get paginated results
+	offset := (pagination.Page - 1) * pagination.PageSize
+	query := `SELECT * FROM findings ` + whereClause + ` ORDER BY severity DESC, created_at DESC LIMIT :limit OFFSET :offset`
+	args["limit"] = pagination.PageSize
+	args["offset"] = offset
+
+	rows, err := r.db.NamedQueryContext(ctx, query, args)
+	if err != nil {
+		return nil, 0, errors.NewInternalError("failed to list findings").WithCause(err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var finding types.Finding
+		if err := rows.StructScan(&finding); err != nil {
+			return nil, 0, errors.NewInternalError("failed to scan finding").WithCause(err)
+		}
+		findings = append(findings, &finding)
+	}
+
+	return findings, total, nil
 }
 
 // Repositories aggregates all repository interfaces

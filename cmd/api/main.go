@@ -12,6 +12,7 @@ import (
 
 	"github.com/agentscan/agentscan/internal/api"
 	"github.com/agentscan/agentscan/internal/database"
+	"github.com/agentscan/agentscan/internal/orchestrator"
 	"github.com/agentscan/agentscan/internal/queue"
 	"github.com/agentscan/agentscan/pkg/config"
 )
@@ -57,33 +58,26 @@ func main() {
 
 	// Initialize repositories
 	repos := database.NewRepositories(db)
-	_ = repos // TODO: Use repositories in handlers
+	
+	// Create repository adapter for orchestrator
+	repoAdapter := database.NewRepositoryAdapter(db, repos)
 
 	// Initialize job queue
 	jobQueue := queue.NewQueue(redis, "agentscan", queue.DefaultQueueConfig())
-	_ = jobQueue // TODO: Use job queue in handlers
 
-	// TODO: Initialize authentication middleware
-	// TODO: Initialize logging middleware
+	// Initialize agent manager
+	agentManager := orchestrator.NewAgentManager()
+	
+	// Initialize orchestrator service
+	orchestratorService := orchestrator.NewService(repoAdapter, jobQueue, agentManager, nil)
 
-	// Create HTTP router
-	mux := http.NewServeMux()
-
-	// Health check endpoint
-	healthHandler := api.NewHealthHandler(db, redis)
-	mux.Handle("/health", healthHandler)
-
-	// TODO: Add API routes
-	mux.HandleFunc("/api/v1/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"message": "AgentScan API v1.0", "status": "ok"}`))
-	})
+	// Create API router with all dependencies
+	router := api.SetupRoutes(cfg, db, redis, repos, orchestratorService, jobQueue)
 
 	// Create HTTP server
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
-		Handler:      mux,
+		Handler:      router,
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 		IdleTimeout:  cfg.Server.IdleTimeout,

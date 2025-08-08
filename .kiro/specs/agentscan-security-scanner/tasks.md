@@ -53,7 +53,7 @@
   - Write unit tests for consensus logic with various scenarios
   - _Requirements: 1.2, 1.3, 1.4, 5.1_
 
-- [ ] 7. Add second SAST agent (ESLint Security)
+- [x] 7. Add second SAST agent (ESLint Security)
 
   - Implement ESLint security agent following Agent interface
   - Configure eslint-plugin-security rules for JavaScript/TypeScript
@@ -62,7 +62,7 @@
   - Write unit tests and integration tests with sample vulnerable code
   - _Requirements: 1.1, 2.1, 2.5_
 
-- [ ] 8. Build REST API foundation
+- [x] 8. Build REST API foundation
 
   - Create API server using Gin framework with proper middleware
   - Implement authentication endpoints with JWT token management
