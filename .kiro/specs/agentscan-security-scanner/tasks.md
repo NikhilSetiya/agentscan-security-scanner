@@ -115,7 +115,7 @@
   - Write tests with repositories containing various secret types
   - _Requirements: 6.4, 6.5_
 
-- [ ] 14. Implement user authentication system
+- [x] 14. Implement user authentication system
 
   - Create authentication service with OAuth integration for GitHub/GitLab
   - Implement JWT-based session management with proper expiration
@@ -124,7 +124,7 @@
   - Write unit tests for authentication flows and security edge cases
   - _Requirements: 7.1, 7.2, 7.3_
 
-- [ ] 15. Build role-based access control (RBAC)
+- [x] 15. Build role-based access control (RBAC)
 
   - Implement organization and team management system
   - Create role-based permissions for repositories and scan results

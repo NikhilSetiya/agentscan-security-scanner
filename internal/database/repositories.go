@@ -11,6 +11,16 @@ import (
 	"github.com/agentscan/agentscan/pkg/types"
 )
 
+// UserRepositoryInterface defines the interface for user operations
+type UserRepositoryInterface interface {
+	Create(ctx context.Context, user *types.User) error
+	GetByID(ctx context.Context, id uuid.UUID) (*types.User, error)
+	GetByEmail(ctx context.Context, email string) (*types.User, error)
+	Update(ctx context.Context, user *types.User) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	List(ctx context.Context, pagination *Pagination) ([]*types.User, int64, error)
+}
+
 // UserRepository handles user database operations
 type UserRepository struct {
 	db *DB
@@ -116,6 +126,30 @@ func (r *UserRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	}
 
 	return nil
+}
+
+// List retrieves a paginated list of users
+func (r *UserRepository) List(ctx context.Context, pagination *Pagination) ([]*types.User, int64, error) {
+	var users []*types.User
+	var total int64
+
+	// Get total count
+	countQuery := `SELECT COUNT(*) FROM users`
+	err := r.db.GetContext(ctx, &total, countQuery)
+	if err != nil {
+		return nil, 0, errors.NewInternalError("failed to count users").WithCause(err)
+	}
+
+	// Get paginated results
+	offset := (pagination.Page - 1) * pagination.PageSize
+	query := `SELECT * FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2`
+
+	err = r.db.SelectContext(ctx, &users, query, pagination.PageSize, offset)
+	if err != nil {
+		return nil, 0, errors.NewInternalError("failed to list users").WithCause(err)
+	}
+
+	return users, total, nil
 }
 
 // ScanJobRepository handles scan job database operations
@@ -518,7 +552,7 @@ func (r *FindingRepository) List(ctx context.Context, filter *FindingFilter, pag
 
 // Repositories aggregates all repository interfaces
 type Repositories struct {
-	Users     *UserRepository
+	Users     UserRepositoryInterface
 	ScanJobs  *ScanJobRepository
 	Findings  *FindingRepository
 }
