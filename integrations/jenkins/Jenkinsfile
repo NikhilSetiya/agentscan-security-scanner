@@ -1,0 +1,275 @@
+pipeline {
+    agent any
+    
+    parameters {
+        string(name: 'AGENTSCAN_API_URL', defaultValue: 'https://api.agentscan.dev', description: 'AgentScan API URL')
+        string(name: 'FAIL_ON_SEVERITY', defaultValue: 'high', description: 'Fail build on findings of this severity or higher (low, medium, high)')
+        booleanParam(name: 'UPLOAD_SARIF', defaultValue: true, description: 'Upload SARIF results to GitHub Security tab')
+        string(name: 'EXCLUDE_PATHS', defaultValue: 'node_modules/**,vendor/**,*.min.js', description: 'Comma-separated paths to exclude')
+    }
+    
+    environment {
+        AGENTSCAN_TOKEN = credentials('agentscan-api-token')
+        WORKSPACE_PATH = "${WORKSPACE}"
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        
+        stage('Install AgentScan CLI') {
+            steps {
+                script {
+                    if (isUnix()) {
+                        sh '''
+                            # Download and install AgentScan CLI
+                            curl -sSL https://install.agentscan.dev | sh
+                            export PATH="$HOME/.agentscan/bin:$PATH"
+                            agentscan-cli version
+                        '''
+                    } else {
+                        bat '''
+                            REM Download and install AgentScan CLI for Windows
+                            powershell -Command "Invoke-WebRequest -Uri https://install.agentscan.dev/windows -OutFile install.ps1; ./install.ps1"
+                            agentscan-cli version
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('Security Scan') {
+            steps {
+                script {
+                    def scanCommand = """
+                        agentscan-cli scan \\
+                            --api-url=${params.AGENTSCAN_API_URL} \\
+                            --api-token=\$AGENTSCAN_TOKEN \\
+                            --fail-on-severity=${params.FAIL_ON_SEVERITY} \\
+                            --exclude-paths="${params.EXCLUDE_PATHS}" \\
+                            --output-format=json,sarif \\
+                            --output-file=agentscan-results.json \\
+                            --verbose
+                    """
+                    
+                    if (isUnix()) {
+                        sh(script: scanCommand, returnStatus: true)
+                    } else {
+                        bat(script: scanCommand, returnStatus: true)
+                    }
+                }
+            }
+            post {
+                always {
+                    // Archive scan results
+                    archiveArtifacts artifacts: 'agentscan-results.*', allowEmptyArchive: true
+                    
+                    // Publish test results if available
+                    script {
+                        if (fileExists('agentscan-results.json')) {
+                            // Parse results and create Jenkins test report
+                            def results = readJSON file: 'agentscan-results.json'
+                            def summary = results.summary ?: [:]
+                            
+                            // Create build description with findings summary
+                            def description = "Security Scan: "
+                            if (summary.total_findings > 0) {
+                                description += "${summary.total_findings} findings"
+                                if (summary.by_severity?.high > 0) {
+                                    description += " (${summary.by_severity.high} high)"
+                                }
+                            } else {
+                                description += "No issues found ✅"
+                            }
+                            currentBuild.description = description
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Upload SARIF') {
+            when {
+                expression { params.UPLOAD_SARIF && fileExists('agentscan-results.sarif') }
+            }
+            steps {
+                script {
+                    if (env.GITHUB_TOKEN) {
+                        // Upload SARIF to GitHub Security tab
+                        sh '''
+                            curl -X POST \\
+                                -H "Authorization: token $GITHUB_TOKEN" \\
+                                -H "Accept: application/vnd.github.v3+json" \\
+                                "https://api.github.com/repos/$GITHUB_REPOSITORY/code-scanning/sarifs" \\
+                                -d @agentscan-results.sarif
+                        '''
+                    } else {
+                        echo "GITHUB_TOKEN not available, skipping SARIF upload"
+                    }
+                }
+            }
+        }
+        
+        stage('Generate Reports') {
+            steps {
+                script {
+                    if (fileExists('agentscan-results.json')) {
+                        // Generate HTML report for Jenkins
+                        writeFile file: 'security-report.html', text: generateHTMLReport()
+                        
+                        publishHTML([
+                            allowMissing: false,
+                            alwaysLinkToLastBuild: true,
+                            keepAll: true,
+                            reportDir: '.',
+                            reportFiles: 'security-report.html',
+                            reportName: 'AgentScan Security Report',
+                            reportTitles: 'Security Scan Results'
+                        ])
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            // Clean up
+            script {
+                if (isUnix()) {
+                    sh 'rm -f agentscan-results.* security-report.html || true'
+                } else {
+                    bat 'del /f /q agentscan-results.* security-report.html 2>nul || exit /b 0'
+                }
+            }
+        }
+        
+        success {
+            echo "✅ Security scan completed successfully"
+        }
+        
+        failure {
+            script {
+                def message = "❌ Security scan failed"
+                if (fileExists('agentscan-results.json')) {
+                    def results = readJSON file: 'agentscan-results.json'
+                    def highSeverity = results.summary?.by_severity?.high ?: 0
+                    if (highSeverity > 0) {
+                        message += " - Found ${highSeverity} high severity security issues"
+                    }
+                }
+                
+                // Send notification if configured
+                if (env.SLACK_WEBHOOK_URL) {
+                    httpRequest(
+                        httpMode: 'POST',
+                        url: env.SLACK_WEBHOOK_URL,
+                        contentType: 'APPLICATION_JSON',
+                        requestBody: """
+                        {
+                            "text": "${message}",
+                            "attachments": [{
+                                "color": "danger",
+                                "fields": [{
+                                    "title": "Build",
+                                    "value": "${env.BUILD_URL}",
+                                    "short": true
+                                }, {
+                                    "title": "Repository",
+                                    "value": "${env.GIT_URL}",
+                                    "short": true
+                                }]
+                            }]
+                        }
+                        """
+                    )
+                }
+            }
+        }
+    }
+}
+
+def generateHTMLReport() {
+    def results = readJSON file: 'agentscan-results.json'
+    def summary = results.summary ?: [:]
+    def findings = results.findings ?: []
+    
+    def html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>AgentScan Security Report</title>
+        <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 40px; }
+            .header { border-bottom: 2px solid #e1e5e9; padding-bottom: 20px; margin-bottom: 30px; }
+            .summary { display: flex; gap: 20px; margin-bottom: 30px; }
+            .metric { background: #f6f8fa; padding: 15px; border-radius: 6px; text-align: center; }
+            .metric-value { font-size: 24px; font-weight: bold; margin-bottom: 5px; }
+            .metric-label { color: #656d76; font-size: 14px; }
+            .high { color: #d1242f; }
+            .medium { color: #fb8500; }
+            .low { color: #1f883d; }
+            .findings { margin-top: 30px; }
+            .finding { border: 1px solid #d0d7de; border-radius: 6px; margin-bottom: 15px; padding: 15px; }
+            .finding-header { display: flex; justify-content: between; align-items: center; margin-bottom: 10px; }
+            .severity-badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+            .severity-high { background: #ffebe9; color: #d1242f; }
+            .severity-medium { background: #fff8dc; color: #fb8500; }
+            .severity-low { background: #dafbe1; color: #1f883d; }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>🔒 AgentScan Security Report</h1>
+            <p>Generated on ${new Date().format('yyyy-MM-dd HH:mm:ss')}</p>
+        </div>
+        
+        <div class="summary">
+            <div class="metric">
+                <div class="metric-value">${summary.total_findings ?: 0}</div>
+                <div class="metric-label">Total Findings</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value high">${summary.by_severity?.high ?: 0}</div>
+                <div class="metric-label">High Severity</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value medium">${summary.by_severity?.medium ?: 0}</div>
+                <div class="metric-label">Medium Severity</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value low">${summary.by_severity?.low ?: 0}</div>
+                <div class="metric-label">Low Severity</div>
+            </div>
+        </div>
+    """
+    
+    if (findings.size() > 0) {
+        html += '<div class="findings"><h2>Security Findings</h2>'
+        
+        findings.each { finding ->
+            html += """
+            <div class="finding">
+                <div class="finding-header">
+                    <h3>${finding.title ?: 'Security Issue'}</h3>
+                    <span class="severity-badge severity-${finding.severity}">${finding.severity?.toUpperCase()}</span>
+                </div>
+                <p><strong>File:</strong> ${finding.file_path}:${finding.line_number}</p>
+                <p><strong>Tool:</strong> ${finding.tool}</p>
+                <p><strong>Description:</strong> ${finding.description}</p>
+                ${finding.code_snippet ? "<pre><code>${finding.code_snippet}</code></pre>" : ""}
+            </div>
+            """
+        }
+        
+        html += '</div>'
+    } else {
+        html += '<div class="no-findings"><h2>✅ No Security Issues Found</h2><p>Great job! Your code looks secure.</p></div>'
+    }
+    
+    html += '</body></html>'
+    return html
+}

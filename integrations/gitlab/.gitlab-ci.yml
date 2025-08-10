@@ -1,0 +1,244 @@
+# AgentScan Security Scanning for GitLab CI
+# Add this to your .gitlab-ci.yml file
+
+variables:
+  AGENTSCAN_API_URL: "https://api.agentscan.dev"
+  AGENTSCAN_FAIL_ON_SEVERITY: "high"
+  AGENTSCAN_OUTPUT_FORMAT: "json,sarif"
+
+stages:
+  - security
+
+agentscan_security_scan:
+  stage: security
+  image: alpine:latest
+  
+  variables:
+    # Override these in your GitLab CI/CD variables
+    AGENTSCAN_EXCLUDE_PATHS: "node_modules/**,vendor/**,*.min.js,test/**,tests/**"
+    AGENTSCAN_TIMEOUT: "30m"
+  
+  before_script:
+    # Install required tools
+    - apk add --no-cache curl jq git
+    
+    # Install AgentScan CLI
+    - curl -sSL https://install.agentscan.dev | sh
+    - export PATH="$HOME/.agentscan/bin:$PATH"
+    - agentscan-cli version
+  
+  script:
+    # Run security scan
+    - |
+      echo "🔒 Starting AgentScan security analysis..."
+      
+      # Build scan command
+      SCAN_CMD="agentscan-cli scan"
+      SCAN_CMD="$SCAN_CMD --api-url=$AGENTSCAN_API_URL"
+      
+      if [ -n "$AGENTSCAN_API_TOKEN" ]; then
+        SCAN_CMD="$SCAN_CMD --api-token=$AGENTSCAN_API_TOKEN"
+      fi
+      
+      SCAN_CMD="$SCAN_CMD --fail-on-severity=$AGENTSCAN_FAIL_ON_SEVERITY"
+      SCAN_CMD="$SCAN_CMD --output-format=$AGENTSCAN_OUTPUT_FORMAT"
+      SCAN_CMD="$SCAN_CMD --output-file=agentscan-results.json"
+      SCAN_CMD="$SCAN_CMD --timeout=$AGENTSCAN_TIMEOUT"
+      SCAN_CMD="$SCAN_CMD --verbose"
+      
+      if [ -n "$AGENTSCAN_EXCLUDE_PATHS" ]; then
+        IFS=',' read -ra PATHS <<< "$AGENTSCAN_EXCLUDE_PATHS"
+        for path in "${PATHS[@]}"; do
+          SCAN_CMD="$SCAN_CMD --exclude-path=$path"
+        done
+      fi
+      
+      # Execute scan
+      eval $SCAN_CMD
+      SCAN_EXIT_CODE=$?
+      
+      echo "Scan completed with exit code: $SCAN_EXIT_CODE"
+      
+      # Process results
+      if [ -f "agentscan-results.json" ]; then
+        echo "📊 Processing scan results..."
+        
+        # Extract summary information
+        TOTAL_FINDINGS=$(jq -r '.summary.total_findings // 0' agentscan-results.json)
+        HIGH_FINDINGS=$(jq -r '.summary.by_severity.high // 0' agentscan-results.json)
+        MEDIUM_FINDINGS=$(jq -r '.summary.by_severity.medium // 0' agentscan-results.json)
+        LOW_FINDINGS=$(jq -r '.summary.by_severity.low // 0' agentscan-results.json)
+        
+        echo "📈 Scan Summary:"
+        echo "  Total findings: $TOTAL_FINDINGS"
+        echo "  High severity: $HIGH_FINDINGS"
+        echo "  Medium severity: $MEDIUM_FINDINGS"
+        echo "  Low severity: $LOW_FINDINGS"
+        
+        # Generate GitLab-compatible report
+        python3 -c "
+import json
+import sys
+
+# Read AgentScan results
+with open('agentscan-results.json', 'r') as f:
+    results = json.load(f)
+
+# Convert to GitLab SAST format
+gitlab_report = {
+    'version': '14.0.0',
+    'vulnerabilities': [],
+    'scan': {
+        'analyzer': {
+            'id': 'agentscan',
+            'name': 'AgentScan',
+            'version': '1.0.0',
+            'vendor': {
+                'name': 'AgentScan'
+            }
+        },
+        'scanner': {
+            'id': 'agentscan-multi-agent',
+            'name': 'AgentScan Multi-Agent Scanner'
+        },
+        'type': 'sast',
+        'start_time': results.get('start_time', ''),
+        'end_time': results.get('end_time', ''),
+        'status': 'success'
+    }
+}
+
+# Convert findings to GitLab format
+for finding in results.get('findings', []):
+    vulnerability = {
+        'id': finding.get('id', ''),
+        'category': 'sast',
+        'name': finding.get('title', 'Security Issue'),
+        'description': finding.get('description', ''),
+        'severity': finding.get('severity', 'Unknown').title(),
+        'confidence': 'High' if finding.get('confidence', 0) > 0.8 else 'Medium',
+        'scanner': {
+            'id': 'agentscan',
+            'name': 'AgentScan'
+        },
+        'location': {
+            'file': finding.get('file_path', ''),
+            'start_line': finding.get('line_number', 1),
+            'end_line': finding.get('line_number', 1)
+        },
+        'identifiers': [
+            {
+                'type': 'agentscan_rule_id',
+                'name': finding.get('rule_id', ''),
+                'value': finding.get('rule_id', '')
+            }
+        ]
+    }
+    
+    gitlab_report['vulnerabilities'].append(vulnerability)
+
+# Write GitLab report
+with open('gl-sast-report.json', 'w') as f:
+    json.dump(gitlab_report, f, indent=2)
+
+print('GitLab SAST report generated: gl-sast-report.json')
+"
+      else
+        echo "❌ No scan results file found"
+        exit 1
+      fi
+      
+      # Post merge request comment if this is a merge request
+      if [ "$CI_PIPELINE_SOURCE" = "merge_request_event" ] && [ -n "$GITLAB_TOKEN" ]; then
+        echo "💬 Posting merge request comment..."
+        
+        # Generate comment content
+        COMMENT_BODY=$(python3 -c "
+import json
+
+with open('agentscan-results.json', 'r') as f:
+    results = json.load(f)
+
+summary = results.get('summary', {})
+findings = results.get('findings', [])
+
+comment = '## 🔒 AgentScan Security Report\n\n'
+
+if summary.get('total_findings', 0) == 0:
+    comment += '✅ **No security issues found!**\n\n'
+    comment += 'Your code looks secure. Great job! 🎉\n'
+else:
+    comment += '### Summary\n\n'
+    
+    high = summary.get('by_severity', {}).get('high', 0)
+    medium = summary.get('by_severity', {}).get('medium', 0)
+    low = summary.get('by_severity', {}).get('low', 0)
+    
+    if high > 0:
+        comment += f'🔴 **{high} High** severity issues\n'
+    if medium > 0:
+        comment += f'🟡 **{medium} Medium** severity issues\n'
+    if low > 0:
+        comment += f'🟢 **{low} Low** severity issues\n'
+    
+    comment += '\n'
+    
+    # Show high severity findings
+    if high > 0:
+        comment += '### 🔴 High Severity Issues\n\n'
+        for finding in findings:
+            if finding.get('severity') == 'high':
+                title = finding.get('title', 'Security Issue')
+                file_path = finding.get('file_path', 'unknown')
+                line_number = finding.get('line_number', 0)
+                description = finding.get('description', '')
+                tool = finding.get('tool', 'unknown')
+                
+                comment += f'**{title}** in \`{file_path}:{line_number}\`\n'
+                comment += f'- {description}\n'
+                comment += f'- Detected by: {tool}\n\n'
+
+comment += '---\n'
+comment += '*Powered by [AgentScan](https://agentscan.dev) - Multi-agent security scanning*\n'
+
+print(comment)
+")
+        
+        # Post comment to merge request
+        curl -X POST \
+          -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d "{\"body\": $(echo "$COMMENT_BODY" | jq -Rs .)}" \
+          "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID/notes"
+        
+        echo "✅ Merge request comment posted"
+      fi
+      
+      # Exit with scan result
+      exit $SCAN_EXIT_CODE
+  
+  artifacts:
+    reports:
+      sast: gl-sast-report.json
+    paths:
+      - agentscan-results.json
+      - agentscan-results.sarif
+      - gl-sast-report.json
+    expire_in: 1 week
+    when: always
+  
+  # Only run on merge requests and main branch
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "master"
+
+# Optional: Separate job for scheduled security scans
+agentscan_scheduled_scan:
+  extends: agentscan_security_scan
+  variables:
+    AGENTSCAN_FAIL_ON_SEVERITY: "medium"  # More strict for scheduled scans
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  allow_failure: false

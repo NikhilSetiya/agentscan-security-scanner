@@ -82,30 +82,21 @@ func runScan() {
 		log.Fatalf("Failed to get current directory: %v", err)
 	}
 
-	// Override with GitHub Actions workspace if available
-	if githubWorkspace := os.Getenv("GITHUB_WORKSPACE"); githubWorkspace != "" {
-		workspace = githubWorkspace
+	// Override with CI workspace if available
+	if ciWorkspace := detectCIWorkspace(); ciWorkspace != "" {
+		workspace = ciWorkspace
 	}
 
-	// Create scan request (for reference, not used in local scan)
-	_ = &orchestrator.ScanRequest{
-		RepoURL:   detectRepoURL(),
-		Branch:    detectBranch(),
-		CommitSHA: detectCommit(),
-		ScanType:  "full", // CLI scans are typically full scans
-		Priority:  types.PriorityMedium,
-		Options: map[string]interface{}{
-			"workspace":      workspace,
-			"output_format":  options.OutputFormat,
-			"output_file":    options.OutputFile,
-			"include_tools":  strings.Join(options.IncludeTools, ","),
-			"exclude_tools":  strings.Join(options.ExcludeTools, ","),
-			"exclude_paths":  strings.Join(options.ExcludePaths, ","),
-		},
+	var results *ScanResults
+	
+	if options.APIUrl != "" && options.APIToken != "" {
+		// Use API-based scanning
+		results, err = performAPIScan(workspace, options)
+	} else {
+		// Use local scanning
+		results, err = performLocalScan(workspace, options)
 	}
-
-	// Submit scan (this would normally go through the API)
-	results, err := performLocalScan(workspace, options)
+	
 	if err != nil {
 		log.Fatalf("Scan failed: %v", err)
 	}
@@ -117,6 +108,11 @@ func runScan() {
 
 	// Print summary
 	printScanSummary(results, options)
+
+	// Post CI/CD integration comments if applicable
+	if err := postCIIntegrationResults(results, options); err != nil {
+		log.Printf("Warning: Failed to post CI integration results: %v", err)
+	}
 
 	// Exit with appropriate code based on findings
 	exitCode := determineExitCode(results, options)
@@ -407,6 +403,96 @@ func getEnvOrDefault(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// detectCIWorkspace detects the workspace path from various CI environments
+func detectCIWorkspace() string {
+	// GitHub Actions
+	if workspace := os.Getenv("GITHUB_WORKSPACE"); workspace != "" {
+		return workspace
+	}
+	
+	// GitLab CI
+	if workspace := os.Getenv("CI_PROJECT_DIR"); workspace != "" {
+		return workspace
+	}
+	
+	// Jenkins
+	if workspace := os.Getenv("WORKSPACE"); workspace != "" {
+		return workspace
+	}
+	
+	// Azure DevOps
+	if workspace := os.Getenv("BUILD_SOURCESDIRECTORY"); workspace != "" {
+		return workspace
+	}
+	
+	// CircleCI
+	if workspace := os.Getenv("CIRCLE_WORKING_DIRECTORY"); workspace != "" {
+		return workspace
+	}
+	
+	return ""
+}
+
+// performAPIScan performs a scan using the AgentScan API
+func performAPIScan(workspace string, options *ScanOptions) (*ScanResults, error) {
+	// This would implement API-based scanning
+	// For now, fall back to local scanning
+	return performLocalScan(workspace, options)
+}
+
+// postCIIntegrationResults posts results to CI/CD platforms
+func postCIIntegrationResults(results *ScanResults, options *ScanOptions) error {
+	// GitHub Actions - Set outputs
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		return postGitHubActionsResults(results)
+	}
+	
+	// GitLab CI - Already handled in GitLab CI template
+	if os.Getenv("GITLAB_CI") == "true" {
+		return postGitLabResults(results)
+	}
+	
+	// Jenkins - Set build description
+	if os.Getenv("JENKINS_URL") != "" {
+		return postJenkinsResults(results)
+	}
+	
+	return nil
+}
+
+// postGitHubActionsResults sets GitHub Actions outputs
+func postGitHubActionsResults(results *ScanResults) error {
+	if outputFile := os.Getenv("GITHUB_OUTPUT"); outputFile != "" {
+		f, err := os.OpenFile(outputFile, os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		
+		fmt.Fprintf(f, "results-file=agentscan-results.json\n")
+		fmt.Fprintf(f, "findings-count=%d\n", results.Summary.TotalFindings)
+		fmt.Fprintf(f, "high-severity-count=%d\n", results.Summary.BySeverity["high"])
+		fmt.Fprintf(f, "medium-severity-count=%d\n", results.Summary.BySeverity["medium"])
+		fmt.Fprintf(f, "low-severity-count=%d\n", results.Summary.BySeverity["low"])
+	}
+	
+	return nil
+}
+
+// postGitLabResults handles GitLab CI integration
+func postGitLabResults(results *ScanResults) error {
+	// GitLab integration is handled in the CI template
+	// This could be extended to post additional metadata
+	return nil
+}
+
+// postJenkinsResults handles Jenkins integration
+func postJenkinsResults(results *ScanResults) error {
+	// Jenkins integration is handled by the plugin
+	// This could be extended to set environment variables or write files
+	return nil
 }
 
 // ScanResults represents the results of a security scan

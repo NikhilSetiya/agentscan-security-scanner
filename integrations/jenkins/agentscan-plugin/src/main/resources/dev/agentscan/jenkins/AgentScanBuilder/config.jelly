@@ -1,0 +1,42 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:d="jelly:define" xmlns:l="/lib/layout" xmlns:t="/lib/hudson" xmlns:f="/lib/form">
+  <f:section title="AgentScan Configuration">
+    
+    <f:entry title="API URL" field="apiUrl">
+      <f:textbox default="https://api.agentscan.dev" />
+    </f:entry>
+    
+    <f:entry title="API Credentials" field="credentialsId">
+      <c:select />
+    </f:entry>
+    
+    <f:entry title="Fail Build On" field="failOnSeverity">
+      <f:select />
+    </f:entry>
+    
+    <f:entry title="Exclude Paths" field="excludePaths">
+      <f:textarea rows="3" placeholder="node_modules/**&#10;vendor/**&#10;*.min.js" />
+    </f:entry>
+    
+    <f:entry title="Include Paths" field="includePaths">
+      <f:textarea rows="3" placeholder="src/**&#10;lib/**" />
+    </f:entry>
+    
+    <f:entry title="Output Format" field="outputFormat">
+      <f:textbox default="json,sarif" />
+    </f:entry>
+    
+    <f:entry title="Timeout (minutes)" field="timeoutMinutes">
+      <f:number min="1" max="120" default="30" />
+    </f:entry>
+    
+    <f:entry title="Upload SARIF to GitHub" field="uploadSarif">
+      <f:checkbox default="true" />
+    </f:entry>
+    
+    <f:entry title="Generate HTML Report" field="generateReport">
+      <f:checkbox default="true" />
+    </f:entry>
+    
+  </f:section>
+</j:jelly>
