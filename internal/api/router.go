@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/agentscan/agentscan/internal/database"
+	"github.com/agentscan/agentscan/internal/findings"
 	"github.com/agentscan/agentscan/internal/orchestrator"
 	"github.com/agentscan/agentscan/internal/queue"
 	"github.com/agentscan/agentscan/pkg/config"
@@ -49,7 +50,11 @@ func NewRouter(cfg *config.Config, db *database.DB, redis *queue.RedisClient, re
 	// Create handlers
 	authHandler := NewAuthHandler(cfg, repos, auditLogger)
 	scanHandler := NewScanHandler(repos, orch, q)
-	findingHandler := NewFindingHandler(repos)
+	
+	// Create findings service and handler
+	findingsExporter := findings.NewExportService("http://localhost:8080") // TODO: Use config
+	findingsService := findings.NewService(db.DB, findingsExporter)
+	findingsHandler := NewFindingsHandler(findingsService)
 
 	// API v1 routes
 	v1 := router.Group("/api/v1")
@@ -92,12 +97,31 @@ func NewRouter(cfg *config.Config, db *database.DB, redis *queue.RedisClient, re
 			// Finding routes
 			findings := protected.Group("/findings")
 			{
-				findings.GET("", findingHandler.ListFindings)
-				findings.GET("/stats", findingHandler.GetFindingStats)
-				findings.GET("/export", findingHandler.ExportFindings)
-				findings.GET("/:id", findingHandler.GetFinding)
-				findings.PATCH("/:id/status", findingHandler.UpdateFindingStatus)
-				findings.PATCH("/bulk/status", findingHandler.BulkUpdateFindings)
+				findings.GET("", findingsHandler.ListFindings)
+				findings.GET("/:id", findingsHandler.GetFinding)
+				findings.PATCH("/:id/status", findingsHandler.UpdateFindingStatus)
+				findings.POST("/:id/suppress", findingsHandler.SuppressFinding)
+				findings.PATCH("/bulk/status", findingsHandler.BulkUpdateFindings)
+				findings.POST("/export", findingsHandler.ExportFindings)
+			}
+
+			// Finding suppressions routes
+			suppressions := protected.Group("/suppressions")
+			{
+				suppressions.GET("", findingsHandler.GetSuppressions)
+				suppressions.DELETE("/:id", findingsHandler.DeleteSuppression)
+			}
+
+			// Finding stats routes
+			stats := protected.Group("/stats")
+			{
+				stats.GET("/findings/:scan_job_id", findingsHandler.GetFindingStats)
+			}
+
+			// User feedback routes
+			feedback := protected.Group("/feedback")
+			{
+				feedback.GET("", findingsHandler.GetUserFeedback)
 			}
 		}
 
