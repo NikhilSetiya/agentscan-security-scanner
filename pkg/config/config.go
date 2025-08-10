@@ -15,6 +15,7 @@ type Config struct {
 	Agents   AgentsConfig   `json:"agents"`
 	Auth     AuthConfig     `json:"auth"`
 	Logging  LoggingConfig  `json:"logging"`
+	GitHub   GitHubConfig   `json:"github"`
 }
 
 // ServerConfig contains HTTP server configuration
@@ -66,6 +67,12 @@ type AuthConfig struct {
 	GitHubSecret    string        `json:"github_secret"`
 	GitLabClientID  string        `json:"gitlab_client_id"`
 	GitLabSecret    string        `json:"gitlab_secret"`
+}
+
+// GitHubConfig holds GitHub App configuration
+type GitHubConfig struct {
+	AppID      int64  `json:"app_id"`
+	PrivateKey string `json:"private_key"`
 }
 
 // LoggingConfig contains logging configuration
@@ -123,6 +130,10 @@ func Load() (*Config, error) {
 			Level:  getEnvString("LOG_LEVEL", "info"),
 			Format: getEnvString("LOG_FORMAT", "json"),
 			Output: getEnvString("LOG_OUTPUT", "stdout"),
+		},
+		GitHub: GitHubConfig{
+			AppID:      getEnvInt64("GITHUB_APP_ID", 0),
+			PrivateKey: getEnvString("GITHUB_PRIVATE_KEY", ""),
 		},
 	}
 
@@ -201,6 +212,15 @@ func getEnvFloat(key string, defaultValue float64) float64 {
 	if value := os.Getenv(key); value != "" {
 		if floatValue, err := strconv.ParseFloat(value, 64); err == nil {
 			return floatValue
+		}
+	}
+	return defaultValue
+}
+
+func getEnvInt64(key string, defaultValue int64) int64 {
+	if value := os.Getenv(key); value != "" {
+		if intValue, err := strconv.ParseInt(value, 10, 64); err == nil {
+			return intValue
 		}
 	}
 	return defaultValue

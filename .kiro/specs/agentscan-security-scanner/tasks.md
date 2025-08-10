@@ -188,7 +188,7 @@
   - Write extension tests and package for VS Code marketplace
   - _Requirements: 4.2, 3.3_
 
-- [ ] 20. Implement GitHub integration
+- [x] 20. Implement GitHub integration
 
   - Create GitHub App with proper webhook event handling
   - Add PR comment posting with scan results and status checks

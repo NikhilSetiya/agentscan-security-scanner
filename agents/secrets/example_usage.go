@@ -235,7 +235,7 @@ func ExampleErrorHandling() {
 	factory := NewFactory()
 	
 	// Create agent
-	agent, err := factory.CreateAgent(TruffleHogAgent)
+	securityAgent, err := factory.CreateAgent(TruffleHogAgent)
 	if err != nil {
 		log.Fatalf("Failed to create agent: %v", err)
 	}
@@ -249,7 +249,7 @@ func ExampleErrorHandling() {
 	
 	ctx := context.Background()
 	
-	result, err := agent.Scan(ctx, scanConfig)
+	result, err := securityAgent.Scan(ctx, scanConfig)
 	if err != nil {
 		fmt.Printf("Scan failed as expected: %v\n", err)
 		

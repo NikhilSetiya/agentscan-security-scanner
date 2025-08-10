@@ -5,13 +5,14 @@ import (
 
 	"github.com/agentscan/agentscan/internal/database"
 	"github.com/agentscan/agentscan/internal/findings"
+	"github.com/agentscan/agentscan/internal/github"
 	"github.com/agentscan/agentscan/internal/orchestrator"
 	"github.com/agentscan/agentscan/internal/queue"
 	"github.com/agentscan/agentscan/pkg/config"
 )
 
 // Router creates and configures the API router
-func NewRouter(cfg *config.Config, db *database.DB, redis *queue.RedisClient, repos *database.Repositories, orch orchestrator.OrchestrationService, q *queue.Queue) *gin.Engine {
+func NewRouter(cfg *config.Config, db *database.DB, redis *queue.RedisClient, repos *database.Repositories, orch orchestrator.OrchestrationService, q *queue.Queue, githubHandler *github.WebhookHandler) *gin.Engine {
 	// Set Gin mode based on environment
 	if cfg.Logging.Level == "debug" {
 		gin.SetMode(gin.DebugMode)
@@ -134,10 +135,13 @@ func NewRouter(cfg *config.Config, db *database.DB, redis *queue.RedisClient, re
 			{
 				// GitHub webhook handler
 				webhooks.POST("/github", func(c *gin.Context) {
-					// TODO: Implement GitHub webhook handler
-					SuccessResponse(c, map[string]string{
-						"message": "GitHub webhook received",
-					})
+					if githubHandler != nil {
+						githubHandler.HandleWebhook(c.Writer, c.Request)
+					} else {
+						SuccessResponse(c, map[string]string{
+							"message": "GitHub webhook received (handler not configured)",
+						})
+					}
 				})
 
 				// GitLab webhook handler
@@ -180,5 +184,12 @@ func NewRouter(cfg *config.Config, db *database.DB, redis *queue.RedisClient, re
 
 // SetupRoutes is a convenience function to set up routes with all dependencies
 func SetupRoutes(cfg *config.Config, db *database.DB, redis *queue.RedisClient, repos *database.Repositories, orch orchestrator.OrchestrationService, q *queue.Queue) *gin.Engine {
-	return NewRouter(cfg, db, redis, repos, orch, q)
+	// Initialize GitHub service if configured
+	var githubHandler *github.WebhookHandler
+	if cfg.GitHub.AppID != 0 && cfg.GitHub.PrivateKey != "" {
+		githubService := github.NewService(cfg, repos)
+		githubHandler = github.NewWebhookHandler(repos, orch.(*orchestrator.Service), githubService)
+	}
+	
+	return NewRouter(cfg, db, redis, repos, orch, q, githubHandler)
 }

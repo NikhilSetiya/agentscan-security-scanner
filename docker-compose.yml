@@ -52,6 +52,8 @@ services:
       - JWT_SECRET=dev_jwt_secret_change_in_production
       - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
       - GITHUB_SECRET=${GITHUB_SECRET}
+      - GITHUB_APP_ID=${GITHUB_APP_ID}
+      - GITHUB_PRIVATE_KEY=${GITHUB_PRIVATE_KEY}
       - LOG_LEVEL=debug
     depends_on:
       postgres:
