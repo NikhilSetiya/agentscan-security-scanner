@@ -133,7 +133,7 @@
   - Write tests for various RBAC scenarios and edge cases
   - _Requirements: 7.1, 7.2, 7.3, 7.4_
 
-- [ ] 16. Implement incremental scanning system
+- [x] 16. Implement incremental scanning system
 
   - Add git diff analysis to identify changed files since last scan
   - Create file-level caching using content hash + tool version
@@ -142,7 +142,7 @@
   - Write tests for incremental vs full scan scenarios
   - _Requirements: 8.1, 8.2, 8.3, 8.4, 3.2_
 
-- [ ] 17. Create web dashboard foundation and design system
+- [x] 17. Create web dashboard foundation and design system
 
   - Set up React application with TypeScript and modern build tools (Vite)
   - Implement design system with Inter font, 8pt grid, and color palette
@@ -151,7 +151,7 @@
   - Implement hover states, focus management, and accessibility features
   - _Requirements: 5.1, 5.2, 5.3_
 
-- [ ] 17.1 Build dashboard overview page
+- [x] 17.1 Build dashboard overview page
 
   - Create dashboard layout with statistics cards grid showing scan metrics
   - Implement recent scans table with repository, status, findings, and time columns
@@ -160,7 +160,7 @@
   - Write frontend unit tests for dashboard components
   - _Requirements: 5.1, 5.2, 5.3_
 
-- [ ] 17.2 Implement scan results page
+- [x] 17.2 Implement scan results page
 
   - Build scan results page with header showing repository, branch, commit info
   - Create findings table with severity, rule, file, line, and tools columns

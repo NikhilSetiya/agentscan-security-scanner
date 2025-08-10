@@ -1,0 +1,238 @@
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--spacing-4);
+}
+
+.dashboard-title {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-gray-900);
+  margin-bottom: var(--spacing-1);
+}
+
+.dashboard-subtitle {
+  font-size: var(--font-size-base);
+  color: var(--color-gray-600);
+  margin: 0;
+}
+
+.dashboard-actions {
+  display: flex;
+  gap: var(--spacing-3);
+  flex-shrink: 0;
+}
+
+/* Statistics Grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: var(--spacing-6);
+}
+
+.stat-card {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-4);
+}
+
+.stat-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-lg);
+  flex-shrink: 0;
+}
+
+.stat-icon-primary {
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--color-primary);
+}
+
+.stat-icon-error {
+  background: rgba(220, 38, 38, 0.1);
+  color: var(--color-error);
+}
+
+.stat-icon-warning {
+  background: rgba(217, 119, 6, 0.1);
+  color: var(--color-warning);
+}
+
+.stat-icon-info {
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--color-info);
+}
+
+.stat-content {
+  flex: 1;
+}
+
+.stat-value {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-gray-900);
+  line-height: 1.2;
+}
+
+.stat-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-gray-600);
+  margin-top: var(--spacing-1);
+}
+
+/* Status Badge */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding: var(--spacing-1) var(--spacing-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  text-transform: capitalize;
+}
+
+/* Findings Summary */
+.findings-summary {
+  display: flex;
+  gap: var(--spacing-2);
+  flex-wrap: wrap;
+}
+
+.finding-count {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--spacing-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.finding-high {
+  background: rgba(220, 38, 38, 0.1);
+  color: var(--color-error);
+}
+
+.finding-medium {
+  background: rgba(217, 119, 6, 0.1);
+  color: var(--color-warning);
+}
+
+.finding-low {
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--color-info);
+}
+
+.finding-clean {
+  background: rgba(5, 150, 105, 0.1);
+  color: var(--color-success);
+}
+
+/* Repository and other table content */
+.repository-name {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-gray-900);
+}
+
+.duration {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  font-size: var(--font-size-sm);
+  color: var(--color-gray-600);
+}
+
+.timestamp {
+  color: var(--color-gray-500);
+  font-size: var(--font-size-sm);
+}
+
+/* Chart */
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.chart-legend {
+  display: flex;
+  gap: var(--spacing-4);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-gray-600);
+}
+
+.legend-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.chart-container {
+  margin-top: var(--spacing-4);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .dashboard-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .dashboard-actions {
+    justify-content: stretch;
+  }
+  
+  .dashboard-actions .btn {
+    flex: 1;
+  }
+  
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: var(--spacing-4);
+  }
+  
+  .chart-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-3);
+  }
+  
+  .chart-legend {
+    gap: var(--spacing-3);
+  }
+  
+  .findings-summary {
+    flex-direction: column;
+    gap: var(--spacing-1);
+  }
+}
+
+@media (max-width: 480px) {
+  .stat-card {
+    gap: var(--spacing-3);
+  }
+  
+  .stat-icon {
+    width: 40px;
+    height: 40px;
+  }
+  
+  .stat-value {
+    font-size: var(--font-size-lg);
+  }
+}

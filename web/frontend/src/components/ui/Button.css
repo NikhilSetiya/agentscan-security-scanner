@@ -1,0 +1,132 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  font-weight: var(--font-weight-medium);
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  gap: var(--spacing-2);
+  position: relative;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+/* Sizes */
+.btn-sm {
+  padding: var(--spacing-1) var(--spacing-3);
+  font-size: var(--font-size-xs);
+  height: 32px;
+}
+
+.btn-md {
+  padding: var(--spacing-2) var(--spacing-4);
+  font-size: var(--font-size-sm);
+  height: 40px;
+}
+
+.btn-lg {
+  padding: var(--spacing-3) var(--spacing-6);
+  font-size: var(--font-size-base);
+  height: 48px;
+}
+
+/* Variants */
+.btn-primary {
+  background: var(--color-primary);
+  color: white;
+}
+
+.btn-primary:hover:not(.btn-disabled) {
+  background: var(--color-primary-hover);
+}
+
+.btn-secondary {
+  background: var(--color-bg-primary);
+  color: var(--color-gray-700);
+  border: 1px solid var(--color-gray-300);
+}
+
+.btn-secondary:hover:not(.btn-disabled) {
+  background: var(--color-gray-50);
+  border-color: var(--color-gray-400);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-gray-600);
+}
+
+.btn-ghost:hover:not(.btn-disabled) {
+  background: var(--color-gray-100);
+  color: var(--color-gray-900);
+}
+
+.btn-danger {
+  background: var(--color-error);
+  color: white;
+}
+
+.btn-danger:hover:not(.btn-disabled) {
+  background: #b91c1c;
+}
+
+/* States */
+.btn-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.btn-loading {
+  cursor: wait;
+}
+
+/* Spinner */
+.btn-spinner {
+  width: 16px;
+  height: 16px;
+  animation: spin 1s linear infinite;
+}
+
+.btn-spinner-circle {
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-dasharray: 31.416;
+  stroke-dashoffset: 31.416;
+  animation: spinner-dash 2s ease-in-out infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes spinner-dash {
+  0% {
+    stroke-dasharray: 1, 150;
+    stroke-dashoffset: 0;
+  }
+  50% {
+    stroke-dasharray: 90, 150;
+    stroke-dashoffset: -35;
+  }
+  100% {
+    stroke-dasharray: 90, 150;
+    stroke-dashoffset: -124;
+  }
+}

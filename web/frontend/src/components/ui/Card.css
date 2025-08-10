@@ -1,0 +1,43 @@
+.card {
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-6);
+  transition: all var(--transition-fast);
+}
+
+.card-hover:hover {
+  border-color: var(--color-gray-300);
+  box-shadow: var(--shadow-md);
+}
+
+.card-header {
+  margin-bottom: var(--spacing-4);
+  padding-bottom: var(--spacing-4);
+  border-bottom: 1px solid var(--color-gray-200);
+}
+
+.card-header:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.card-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-gray-900);
+  margin-bottom: var(--spacing-1);
+  line-height: 1.4;
+}
+
+.card-subtitle {
+  font-size: var(--font-size-sm);
+  color: var(--color-gray-500);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.card-content {
+  /* Content styling is handled by child components */
+}
