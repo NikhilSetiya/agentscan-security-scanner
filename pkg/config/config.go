@@ -29,15 +29,19 @@ type ServerConfig struct {
 
 // DatabaseConfig contains database connection configuration
 type DatabaseConfig struct {
-	Host            string `json:"host"`
-	Port            int    `json:"port"`
-	Name            string `json:"name"`
-	User            string `json:"user"`
-	Password        string `json:"password"`
-	SSLMode         string `json:"ssl_mode"`
-	MaxOpenConns    int    `json:"max_open_conns"`
-	MaxIdleConns    int    `json:"max_idle_conns"`
-	ConnMaxLifetime time.Duration `json:"conn_max_lifetime"`
+	Host               string        `json:"host"`
+	Port               int           `json:"port"`
+	Name               string        `json:"name"`
+	User               string        `json:"user"`
+	Password           string        `json:"password"`
+	SSLMode            string        `json:"ssl_mode"`
+	MaxOpenConns       int           `json:"max_open_conns"`
+	MaxIdleConns       int           `json:"max_idle_conns"`
+	ConnMaxLifetime    time.Duration `json:"conn_max_lifetime"`
+	ConnMaxIdleTime    time.Duration `json:"conn_max_idle_time"`
+	QueryTimeout       time.Duration `json:"query_timeout"`
+	StatementTimeout   time.Duration `json:"statement_timeout"`
+	EnablePreparedStmt bool          `json:"enable_prepared_stmt"`
 }
 
 // RedisConfig contains Redis connection configuration
@@ -93,15 +97,19 @@ func Load() (*Config, error) {
 			IdleTimeout:  getEnvDuration("SERVER_IDLE_TIMEOUT", 120*time.Second),
 		},
 		Database: DatabaseConfig{
-			Host:            getEnvString("DB_HOST", "localhost"),
-			Port:            getEnvInt("DB_PORT", 5432),
-			Name:            getEnvString("DB_NAME", "agentscan"),
-			User:            getEnvString("DB_USER", "agentscan"),
-			Password:        getEnvString("DB_PASSWORD", ""),
-			SSLMode:         getEnvString("DB_SSL_MODE", "disable"),
-			MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),
-			MaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 5),
-			ConnMaxLifetime: getEnvDuration("DB_CONN_MAX_LIFETIME", 5*time.Minute),
+			Host:               getEnvString("DB_HOST", "localhost"),
+			Port:               getEnvInt("DB_PORT", 5432),
+			Name:               getEnvString("DB_NAME", "agentscan"),
+			User:               getEnvString("DB_USER", "agentscan"),
+			Password:           getEnvString("DB_PASSWORD", ""),
+			SSLMode:            getEnvString("DB_SSL_MODE", "disable"),
+			MaxOpenConns:       getEnvInt("DB_MAX_OPEN_CONNS", 50),
+			MaxIdleConns:       getEnvInt("DB_MAX_IDLE_CONNS", 10),
+			ConnMaxLifetime:    getEnvDuration("DB_CONN_MAX_LIFETIME", 5*time.Minute),
+			ConnMaxIdleTime:    getEnvDuration("DB_CONN_MAX_IDLE_TIME", 10*time.Minute),
+			QueryTimeout:       getEnvDuration("DB_QUERY_TIMEOUT", 30*time.Second),
+			StatementTimeout:   getEnvDuration("DB_STATEMENT_TIMEOUT", 30*time.Second),
+			EnablePreparedStmt: getEnvBool("DB_ENABLE_PREPARED_STMT", true),
 		},
 		Redis: RedisConfig{
 			Host:     getEnvString("REDIS_HOST", "localhost"),
@@ -230,6 +238,15 @@ func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
 	if value := os.Getenv(key); value != "" {
 		if duration, err := time.ParseDuration(value); err == nil {
 			return duration
+		}
+	}
+	return defaultValue
+}
+
+func getEnvBool(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		if boolValue, err := strconv.ParseBool(value); err == nil {
+			return boolValue
 		}
 	}
 	return defaultValue

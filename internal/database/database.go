@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -17,17 +18,20 @@ import (
 type DB struct {
 	*sqlx.DB
 	config *config.DatabaseConfig
+	stmtCache map[string]*sqlx.Stmt
+	stmtMutex sync.RWMutex
 }
 
-// New creates a new database connection
+// New creates a new database connection with optimized settings
 func New(cfg *config.DatabaseConfig) (*DB, error) {
 	if cfg == nil {
 		return nil, errors.NewValidationError("database configuration is required")
 	}
 
-	// Build connection string
+	// Build optimized connection string with performance parameters
 	connStr := fmt.Sprintf(
-		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s "+
+		"connect_timeout=10 statement_timeout=30000 idle_in_transaction_session_timeout=60000",
 		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.Name, cfg.SSLMode,
 	)
 
@@ -37,10 +41,13 @@ func New(cfg *config.DatabaseConfig) (*DB, error) {
 		return nil, errors.NewInternalError("failed to connect to database").WithCause(err)
 	}
 
-	// Configure connection pool
+	// Configure optimized connection pool
 	db.SetMaxOpenConns(cfg.MaxOpenConns)
 	db.SetMaxIdleConns(cfg.MaxIdleConns)
 	db.SetConnMaxLifetime(cfg.ConnMaxLifetime)
+	
+	// Set connection max idle time to prevent stale connections
+	db.SetConnMaxIdleTime(10 * time.Minute)
 
 	// Test the connection
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -52,8 +59,9 @@ func New(cfg *config.DatabaseConfig) (*DB, error) {
 	}
 
 	return &DB{
-		DB:     db,
-		config: cfg,
+		DB:        db,
+		config:    cfg,
+		stmtCache: make(map[string]*sqlx.Stmt),
 	}, nil
 }
 
@@ -124,4 +132,165 @@ func (db *DB) Stats() sql.DBStats {
 // Config returns the database configuration
 func (db *DB) Config() *config.DatabaseConfig {
 	return db.config
+}
+
+// PrepareStatement prepares and caches a SQL statement
+func (db *DB) PrepareStatement(ctx context.Context, name, query string) (*sqlx.Stmt, error) {
+	db.stmtMutex.RLock()
+	if stmt, exists := db.stmtCache[name]; exists {
+		db.stmtMutex.RUnlock()
+		return stmt, nil
+	}
+	db.stmtMutex.RUnlock()
+
+	db.stmtMutex.Lock()
+	defer db.stmtMutex.Unlock()
+
+	// Double-check after acquiring write lock
+	if stmt, exists := db.stmtCache[name]; exists {
+		return stmt, nil
+	}
+
+	stmt, err := db.PreparexContext(ctx, query)
+	if err != nil {
+		return nil, errors.NewInternalError("failed to prepare statement").WithCause(err)
+	}
+
+	db.stmtCache[name] = stmt
+	return stmt, nil
+}
+
+// GetCachedStatement retrieves a cached prepared statement
+func (db *DB) GetCachedStatement(name string) (*sqlx.Stmt, bool) {
+	db.stmtMutex.RLock()
+	defer db.stmtMutex.RUnlock()
+	stmt, exists := db.stmtCache[name]
+	return stmt, exists
+}
+
+// ClearStatementCache clears all cached prepared statements
+func (db *DB) ClearStatementCache() error {
+	db.stmtMutex.Lock()
+	defer db.stmtMutex.Unlock()
+
+	var errs []error
+	for name, stmt := range db.stmtCache {
+		if err := stmt.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("failed to close statement %s: %w", name, err))
+		}
+	}
+
+	db.stmtCache = make(map[string]*sqlx.Stmt)
+
+	if len(errs) > 0 {
+		return errors.NewInternalError("failed to clear statement cache").WithCause(fmt.Errorf("%v", errs))
+	}
+
+	return nil
+}
+
+// QueryWithTimeout executes a query with a timeout
+func (db *DB) QueryWithTimeout(ctx context.Context, timeout time.Duration, query string, args ...interface{}) (*sqlx.Rows, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	rows, err := db.QueryxContext(ctx, query, args...)
+	if err != nil {
+		return nil, errors.NewInternalError("query execution failed").WithCause(err)
+	}
+
+	return rows, nil
+}
+
+// ExecWithTimeout executes a statement with a timeout
+func (db *DB) ExecWithTimeout(ctx context.Context, timeout time.Duration, query string, args ...interface{}) (sql.Result, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	result, err := db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return nil, errors.NewInternalError("statement execution failed").WithCause(err)
+	}
+
+	return result, nil
+}
+
+// BatchInsert performs optimized batch insert operations
+func (db *DB) BatchInsert(ctx context.Context, table string, columns []string, values [][]interface{}, batchSize int) error {
+	if len(values) == 0 {
+		return nil
+	}
+
+	if batchSize <= 0 {
+		batchSize = 1000 // Default batch size
+	}
+
+	// Process in batches
+	for i := 0; i < len(values); i += batchSize {
+		end := i + batchSize
+		if end > len(values) {
+			end = len(values)
+		}
+
+		batch := values[i:end]
+		if err := db.executeBatch(ctx, table, columns, batch); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (db *DB) executeBatch(ctx context.Context, table string, columns []string, batch [][]interface{}) error {
+	if len(batch) == 0 {
+		return nil
+	}
+
+	// Build column list
+	columnList := ""
+	for i, col := range columns {
+		if i > 0 {
+			columnList += ", "
+		}
+		columnList += col
+	}
+
+	// Build multi-row insert query
+	valueStrings := make([]string, len(batch))
+	args := make([]interface{}, 0, len(batch)*len(columns))
+	
+	for i, row := range batch {
+		placeholders := make([]string, len(columns))
+		for j := range columns {
+			placeholders[j] = fmt.Sprintf("$%d", len(args)+j+1)
+		}
+		
+		valueString := "("
+		for j, placeholder := range placeholders {
+			if j > 0 {
+				valueString += ", "
+			}
+			valueString += placeholder
+		}
+		valueString += ")"
+		
+		valueStrings[i] = valueString
+		args = append(args, row...)
+	}
+
+	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES %s", 
+		table, 
+		columnList,
+		valueStrings[0])
+	
+	for i := 1; i < len(valueStrings); i++ {
+		query += ", " + valueStrings[i]
+	}
+
+	_, err := db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return errors.NewInternalError("batch insert failed").WithCause(err)
+	}
+
+	return nil
 }

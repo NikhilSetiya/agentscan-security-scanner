@@ -1,52 +1,42 @@
-# Build stage
-FROM golang:1.21-alpine AS builder
+# Multi-stage build for optimized API container
+FROM golang:1.24-alpine AS builder
 
-# Install build dependencies
-RUN apk add --no-cache git ca-certificates tzdata
+# Install build dependencies in single layer
+RUN apk add --no-cache git ca-certificates tzdata upx
 
-# Set working directory
 WORKDIR /app
 
-# Copy go mod files
+# Copy go mod files first for better layer caching
 COPY go.mod go.sum ./
-
-# Download dependencies
-RUN go mod download
+RUN go mod download && go mod verify
 
 # Copy source code
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o api ./cmd/api
+# Build with aggressive optimizations
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags='-w -s -extldflags "-static"' \
+    -a -installsuffix cgo \
+    -trimpath \
+    -o api ./cmd/api
 
-# Final stage
-FROM alpine:latest
+# Compress binary with UPX
+RUN upx --best --lzma api
 
-# Install runtime dependencies
-RUN apk --no-cache add ca-certificates tzdata
+# Final stage - distroless for minimal attack surface
+FROM gcr.io/distroless/static:nonroot
 
-# Create non-root user
-RUN addgroup -g 1001 -S agentscan && \
-    adduser -u 1001 -S agentscan -G agentscan
+# Copy CA certificates and timezone data
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 
-# Set working directory
-WORKDIR /app
+# Copy the compressed binary
+COPY --from=builder /app/api /api
 
-# Copy binary from builder stage
-COPY --from=builder /app/api .
+# Health check using the binary itself
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["/api", "health"]
 
-# Change ownership
-RUN chown -R agentscan:agentscan /app
-
-# Switch to non-root user
-USER agentscan
-
-# Expose port
 EXPOSE 8080
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
-
-# Run the application
-CMD ["./api"]
+ENTRYPOINT ["/api"]

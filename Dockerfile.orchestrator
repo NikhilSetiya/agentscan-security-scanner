@@ -1,51 +1,64 @@
-# Build stage
-FROM golang:1.21-alpine AS builder
+# Multi-stage build for optimized orchestrator container
+FROM golang:1.24-alpine AS builder
 
-# Install build dependencies
-RUN apk add --no-cache git ca-certificates tzdata
+# Install build dependencies in single layer
+RUN apk add --no-cache git ca-certificates tzdata upx
 
-# Set working directory
 WORKDIR /app
 
-# Copy go mod files
+# Copy go mod files first for better layer caching
 COPY go.mod go.sum ./
-
-# Download dependencies
-RUN go mod download
+RUN go mod download && go mod verify
 
 # Copy source code
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o orchestrator ./cmd/orchestrator
+# Build with aggressive optimizations
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags='-w -s -extldflags "-static"' \
+    -a -installsuffix cgo \
+    -trimpath \
+    -o orchestrator ./cmd/orchestrator
 
-# Final stage
-FROM alpine:latest
+# Compress binary with UPX
+RUN upx --best --lzma orchestrator
 
-# Install runtime dependencies including Docker CLI
-RUN apk --no-cache add ca-certificates tzdata docker-cli
+# Final stage - Alpine for Docker CLI support
+FROM alpine:3.19
 
-# Create non-root user
+# Install runtime dependencies in single layer
+RUN apk --no-cache add \
+    ca-certificates \
+    tzdata \
+    docker-cli \
+    && rm -rf /var/cache/apk/*
+
+# Create optimized user and group setup
 RUN addgroup -g 1001 -S agentscan && \
-    adduser -u 1001 -S agentscan -G agentscan
+    adduser -u 1001 -S agentscan -G agentscan && \
+    addgroup agentscan docker
 
-# Add user to docker group for Docker socket access
-RUN addgroup agentscan docker
+# Create temp directory with proper permissions
+RUN mkdir -p /tmp/agentscan && \
+    chown -R agentscan:agentscan /tmp/agentscan
 
-# Set working directory
 WORKDIR /app
 
-# Copy binary from builder stage
+# Copy the compressed binary
 COPY --from=builder /app/orchestrator .
 
-# Create temp directory
-RUN mkdir -p /tmp/agentscan && chown -R agentscan:agentscan /tmp/agentscan
-
-# Change ownership
-RUN chown -R agentscan:agentscan /app
+# Set ownership
+RUN chown agentscan:agentscan orchestrator
 
 # Switch to non-root user
 USER agentscan
 
-# Run the application
-CMD ["./orchestrator"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD ["./orchestrator", "health"]
+
+# Set resource limits via labels
+LABEL com.agentscan.resource.memory="512Mi"
+LABEL com.agentscan.resource.cpu="500m"
+
+ENTRYPOINT ["./orchestrator"]
