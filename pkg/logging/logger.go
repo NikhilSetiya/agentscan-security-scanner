@@ -361,3 +361,60 @@ func (l *Logger) SetLevel(level logrus.Level) {
 func (l *Logger) GetLevel() logrus.Level {
 	return l.Logger.GetLevel()
 }
+
+// Global logger instance
+var globalLogger *Logger
+
+// init initializes the global logger
+func init() {
+	var err error
+	globalLogger, err = NewLogger(nil)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to initialize global logger: %v", err))
+	}
+}
+
+// GetLogger returns the global logger instance
+func GetLogger() *Logger {
+	return globalLogger
+}
+
+// SetGlobalLogger sets the global logger instance
+func SetGlobalLogger(logger *Logger) {
+	globalLogger = logger
+}
+
+// Info logs an info message with key-value pairs
+func (l *Logger) Info(msg string, keysAndValues ...interface{}) {
+	l.WithFields(parseKeysAndValues(keysAndValues)).Info(msg)
+}
+
+// Warn logs a warning message with key-value pairs
+func (l *Logger) Warn(msg string, keysAndValues ...interface{}) {
+	l.WithFields(parseKeysAndValues(keysAndValues)).Warn(msg)
+}
+
+// Error logs an error message with key-value pairs
+func (l *Logger) Error(msg string, keysAndValues ...interface{}) {
+	l.WithFields(parseKeysAndValues(keysAndValues)).Error(msg)
+}
+
+// Debug logs a debug message with key-value pairs
+func (l *Logger) Debug(msg string, keysAndValues ...interface{}) {
+	l.WithFields(parseKeysAndValues(keysAndValues)).Debug(msg)
+}
+
+// parseKeysAndValues converts key-value pairs to logrus.Fields
+func parseKeysAndValues(keysAndValues []interface{}) logrus.Fields {
+	fields := make(logrus.Fields)
+	
+	for i := 0; i < len(keysAndValues); i += 2 {
+		if i+1 < len(keysAndValues) {
+			key := fmt.Sprintf("%v", keysAndValues[i])
+			value := keysAndValues[i+1]
+			fields[key] = value
+		}
+	}
+	
+	return fields
+}
