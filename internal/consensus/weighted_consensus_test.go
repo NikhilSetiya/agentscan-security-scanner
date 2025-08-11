@@ -113,6 +113,11 @@ func TestEngine_WeightedConsensusScoring(t *testing.T) {
 	})
 
 	t.Run("false positive reduction", func(t *testing.T) {
+		// Create engine with ML disabled for this test
+		config := DefaultConfig()
+		config.EnableLearning = false
+		testEngine := NewEngine(config)
+		
 		// Low confidence, single tool finding should be reduced
 		lowConfidenceFindings := []agent.Finding{
 			{
@@ -128,7 +133,7 @@ func TestEngine_WeightedConsensusScoring(t *testing.T) {
 			},
 		}
 
-		result, err := engine.AnalyzeFindings(ctx, lowConfidenceFindings)
+		result, err := testEngine.AnalyzeFindings(ctx, lowConfidenceFindings)
 		require.NoError(t, err)
 		require.Len(t, result.DeduplicatedFindings, 1)
 

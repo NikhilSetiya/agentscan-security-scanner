@@ -2,6 +2,7 @@ package consensus
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"time"
 
@@ -18,6 +19,13 @@ type Engine struct {
 	confidenceThresholds ConfidenceThresholds
 	stats               ConsensusStats
 	startTime           time.Time
+	
+	// ML components
+	mlModel             MLModel
+	reliabilityTracker  ToolReliabilityScorer
+	calibrator          ConfidenceCalibrator
+	featureExtractor    *FeatureExtractor
+	enableML            bool
 }
 
 // Config contains consensus engine configuration
@@ -64,6 +72,11 @@ func NewEngine(config Config) *Engine {
 		confidenceThresholds: DefaultConfidenceThresholds(),
 		stats:               ConsensusStats{},
 		startTime:           time.Now(),
+		mlModel:             NewLinearRegressionModel(),
+		reliabilityTracker:  NewReliabilityTracker(),
+		calibrator:          NewPlattCalibrator(),
+		featureExtractor:    NewFeatureExtractor(),
+		enableML:            config.EnableLearning,
 	}
 }
 
@@ -75,6 +88,11 @@ func NewEngineWithConfig(config Config, similarityConfig SimilarityConfig, confi
 		confidenceThresholds: confidenceThresholds,
 		stats:               ConsensusStats{},
 		startTime:           time.Now(),
+		mlModel:             NewLinearRegressionModel(),
+		reliabilityTracker:  NewReliabilityTracker(),
+		calibrator:          NewPlattCalibrator(),
+		featureExtractor:    NewFeatureExtractor(),
+		enableML:            config.EnableLearning,
 	}
 }
 
@@ -509,7 +527,7 @@ func (e *Engine) calculateConsensusScore(agreementCount, disagreementCount, tota
 	}
 }
 
-// calculateWeightedConsensusScore calculates consensus score using agent weights
+// calculateWeightedConsensusScore calculates consensus score using agent weights and ML
 func (e *Engine) calculateWeightedConsensusScore(findings []agent.Finding, tools []string) float64 {
 	if len(findings) == 0 {
 		return 0.0
@@ -529,13 +547,22 @@ func (e *Engine) calculateWeightedConsensusScore(findings []agent.Finding, tools
 		return e.calculateConsensusScore(len(tools), 0, len(tools))
 	}
 
-	// Calculate weighted confidence score
+	// Calculate traditional weighted confidence score
 	totalWeightedConfidence := 0.0
 	totalWeight := 0.0
 	consistencyBonus := e.calculateConsistencyBonus(len(tools))
 
+	// Get current tool reliabilities
+	toolReliabilities := e.reliabilityTracker.GetAllReliabilities(context.Background())
+
 	for _, finding := range findings {
 		agentWeight := e.getAgentWeight(finding.Tool)
+		
+		// Incorporate dynamic reliability if available
+		if reliability, exists := toolReliabilities[finding.Tool]; exists {
+			agentWeight = (agentWeight + reliability) / 2.0 // Blend static and dynamic weights
+		}
+		
 		confidence := finding.Confidence
 		
 		weightedConfidence := confidence * agentWeight
@@ -548,6 +575,15 @@ func (e *Engine) calculateWeightedConsensusScore(findings []agent.Finding, tools
 	}
 
 	baseScore := (totalWeightedConfidence / totalWeight) * consistencyBonus
+
+	// Apply ML enhancement if enabled
+	if e.enableML && e.mlModel != nil {
+		mlScore, err := e.calculateMLEnhancedScore(context.Background(), findings, tools, toolReliabilities)
+		if err == nil {
+			// Blend traditional and ML scores
+			baseScore = (baseScore + mlScore) / 2.0
+		}
+	}
 
 	// Apply confidence thresholds to ensure compatibility with existing tests
 	toolCount := len(tools)
@@ -562,6 +598,21 @@ func (e *Engine) calculateWeightedConsensusScore(findings []agent.Finding, tools
 	// Apply false positive reduction only for single-tool, low-confidence findings
 	if baseScore < e.config.FalsePositiveThreshold && len(tools) < 2 {
 		return baseScore * 0.5 // Reduce score for likely false positives
+	}
+
+	// Apply confidence calibration if enabled
+	if e.enableML && e.calibrator != nil {
+		calibrationContext := CalibrationContext{
+			Tool:     findings[0].Tool, // Use primary tool for calibration
+			Severity: findings[0].Severity,
+			Category: findings[0].Category,
+			RuleID:   findings[0].RuleID,
+		}
+		
+		calibratedScore, err := e.calibrator.CalibrateConfidence(context.Background(), baseScore, calibrationContext)
+		if err == nil {
+			baseScore = calibratedScore
+		}
 	}
 
 	return minFloat(baseScore, 1.0) // Cap at 1.0
@@ -641,18 +692,48 @@ func (e *Engine) UpdateModel(ctx context.Context, feedback []UserFeedback) error
 		return nil
 	}
 
-	// TODO: Implement machine learning model updates
-	// For now, we'll just log that we received feedback
+	// Update tool reliability tracker
+	for _, fb := range feedback {
+		if e.reliabilityTracker != nil {
+			err := e.reliabilityTracker.UpdateReliability(ctx, fb.FindingID, fb)
+			if err != nil {
+				// Log error but continue processing other feedback
+				continue
+			}
+		}
+	}
+
+	// Prepare training data for ML model
+	trainingData := make([]TrainingExample, 0, len(feedback))
 	
 	for _, fb := range feedback {
-		// Update internal statistics based on feedback
-		switch fb.Action {
-		case "false_positive":
-			// Reduce confidence for similar findings in the future
-		case "confirmed":
-			// Increase confidence for similar findings
-		case "fixed":
-			// Mark as legitimate finding
+		// Convert user feedback to training example
+		trueLabel := e.feedbackToLabel(fb.Action)
+		
+		// Create a basic feature set (in practice, you'd extract from the actual finding)
+		features := MLFeatures{
+			ToolCount:         1, // Would be extracted from actual finding
+			AverageConfidence: fb.Confidence,
+			MaxConfidence:     fb.Confidence,
+			MinConfidence:     fb.Confidence,
+		}
+		
+		example := TrainingExample{
+			Features:   features,
+			TrueLabel:  trueLabel,
+			UserAction: fb.Action,
+			Confidence: fb.Confidence,
+			Timestamp:  fb.Timestamp,
+		}
+		
+		trainingData = append(trainingData, example)
+	}
+
+	// Train ML model if we have enough data
+	if len(trainingData) > 0 && e.mlModel != nil {
+		err := e.mlModel.Train(ctx, trainingData)
+		if err != nil {
+			return fmt.Errorf("failed to train ML model: %w", err)
 		}
 	}
 
@@ -745,4 +826,133 @@ func abs(x int) int {
 		return -x
 	}
 	return x
+}
+
+// calculateMLEnhancedScore uses ML model to enhance consensus scoring
+func (e *Engine) calculateMLEnhancedScore(ctx context.Context, findings []agent.Finding, tools []string, toolReliabilities map[string]float64) (float64, error) {
+	if e.featureExtractor == nil || e.mlModel == nil {
+		return 0.0, fmt.Errorf("ML components not initialized")
+	}
+	
+	// Create a finding group for feature extraction
+	group := FindingGroup{
+		PrimaryFinding:  findings[0],
+		SimilarFindings: findings[1:],
+		Tools:          tools,
+	}
+	
+	// Create consensus context (simplified for now)
+	context := ConsensusContext{
+		TotalAgents:      len(tools),
+		AgentReliability: toolReliabilities,
+		HistoricalData:   []HistoricalFinding{}, // Would be populated from database
+		UserFeedback:     []UserFeedback{},      // Would be populated from database
+	}
+	
+	// Extract features
+	features := e.featureExtractor.ExtractFeatures(group, context, toolReliabilities)
+	
+	// Get ML prediction
+	mlScore, err := e.mlModel.Predict(ctx, features)
+	if err != nil {
+		return 0.0, fmt.Errorf("ML prediction failed: %w", err)
+	}
+	
+	return mlScore, nil
+}
+
+// feedbackToLabel converts user feedback action to a training label
+func (e *Engine) feedbackToLabel(action string) float64 {
+	switch action {
+	case "confirmed", "fixed":
+		return 1.0 // High confidence - this was a real issue
+	case "false_positive":
+		return 0.0 // Low confidence - this was not a real issue
+	case "ignored":
+		return 0.3 // Low-medium confidence - might be real but not important
+	default:
+		return 0.5 // Neutral
+	}
+}
+
+// GetMLModelInfo returns information about the current ML model
+func (e *Engine) GetMLModelInfo() ModelInfo {
+	if e.mlModel == nil {
+		return ModelInfo{
+			Version:   "none",
+			ModelType: "none",
+		}
+	}
+	return e.mlModel.GetModelInfo()
+}
+
+// GetToolReliabilities returns current tool reliability scores
+func (e *Engine) GetToolReliabilities(ctx context.Context) map[string]float64 {
+	if e.reliabilityTracker == nil {
+		return make(map[string]float64)
+	}
+	return e.reliabilityTracker.GetAllReliabilities(ctx)
+}
+
+// GetToolStats returns detailed statistics for a tool
+func (e *Engine) GetToolStats(ctx context.Context, tool string) ToolStats {
+	if e.reliabilityTracker == nil {
+		return ToolStats{Tool: tool, ReliabilityScore: 0.5}
+	}
+	return e.reliabilityTracker.GetToolStats(ctx, tool)
+}
+
+// GetCalibrationStats returns confidence calibration statistics
+func (e *Engine) GetCalibrationStats(ctx context.Context) CalibrationStats {
+	if e.calibrator == nil {
+		return CalibrationStats{}
+	}
+	return e.calibrator.GetCalibrationStats(ctx)
+}
+
+// TrainModelWithHistoricalData trains the ML model with historical finding data
+func (e *Engine) TrainModelWithHistoricalData(ctx context.Context, historicalData []HistoricalFinding) error {
+	if !e.enableML || e.mlModel == nil {
+		return fmt.Errorf("ML not enabled or model not initialized")
+	}
+	
+	// Convert historical data to training examples
+	trainingData := make([]TrainingExample, 0, len(historicalData))
+	
+	for _, hist := range historicalData {
+		// Extract features from historical finding
+		group := FindingGroup{
+			PrimaryFinding:  hist.Finding,
+			SimilarFindings: []agent.Finding{},
+			Tools:          []string{hist.Finding.Tool},
+		}
+		
+		context := ConsensusContext{
+			TotalAgents:      1,
+			AgentReliability: e.GetToolReliabilities(ctx),
+			HistoricalData:   []HistoricalFinding{},
+			UserFeedback:     []UserFeedback{},
+		}
+		
+		features := e.featureExtractor.ExtractFeatures(group, context, e.GetToolReliabilities(ctx))
+		
+		// Convert outcome to label
+		trueLabel := 1.0
+		if hist.WasFalsePositive {
+			trueLabel = 0.0
+		}
+		
+		example := TrainingExample{
+			Features:   features,
+			TrueLabel:  trueLabel,
+			UserAction: hist.UserAction,
+			Confidence: 1.0, // Assume high confidence in historical data
+			Timestamp:  hist.Timestamp,
+		}
+		
+		trainingData = append(trainingData, example)
+	}
+	
+	// Train the model
+	return e.mlModel.Train(ctx, trainingData)
 }
