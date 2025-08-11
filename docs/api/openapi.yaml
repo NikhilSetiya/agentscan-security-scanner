@@ -1,0 +1,492 @@
+openapi: 3.0.3
+info:
+  title: AgentScan Security Scanner API
+  description: |
+    AgentScan is a comprehensive security scanning platform that orchestrates multiple security tools
+    to provide unified vulnerability assessment across different programming languages and frameworks.
+    
+    ## Features
+    - Multi-language SAST (Static Application Security Testing)
+    - Dependency vulnerability scanning (SCA)
+    - Secret detection in code and git history
+    - Consensus-based result aggregation
+    - Real-time scanning with WebSocket updates
+    - Role-based access control
+    - CI/CD integration
+    
+    ## Authentication
+    AgentScan uses JWT-based authentication. Include the JWT token in the Authorization header:
+    ```
+    Authorization: Bearer <your-jwt-token>
+    ```
+    
+    ## Rate Limiting
+    API requests are rate limited to 1000 requests per hour per user.
+    
+    ## Webhooks
+    AgentScan supports webhooks for real-time notifications of scan completion and critical findings.
+    
+  version: 1.0.0
+  contact:
+    name: AgentScan API Support
+    url: https://docs.agentscan.dev
+    email: support@agentscan.dev
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.agentscan.dev/v1
+    description: Production server
+  - url: https://staging-api.agentscan.dev/v1
+    description: Staging server
+  - url: http://localhost:8080/api/v1
+    description: Local development server
+
+security:
+  - BearerAuth: []
+
+paths:
+  # Authentication endpoints
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: User login
+      description: Authenticate user with username/password and receive JWT token
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              standard_login:
+                summary: Standard login
+                value:
+                  username: "developer@company.com"
+                  password: "secure_password_123"
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: User logout
+      description: Invalidate current JWT token
+      operationId: logout
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # Repository management
+  /repositories:
+    get:
+      tags:
+        - Repositories
+      summary: List repositories
+      description: Get list of repositories accessible to the current user
+      operationId: listRepositories
+      parameters:
+        - name: page
+          in: query
+          description: Page number for pagination
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: search
+          in: query
+          description: Search repositories by name or URL
+          schema:
+            type: string
+            example: "my-project"
+      responses:
+        '200':
+          description: List of repositories
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositoryListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Repositories
+      summary: Add repository
+      description: Add a new repository for scanning
+      operationId: createRepository
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRepositoryRequest'
+      responses:
+        '201':
+          description: Repository created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Repository'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  # Scan management
+  /scans:
+    get:
+      tags:
+        - Scans
+      summary: List scans
+      description: Get list of scans with optional filtering
+      operationId: listScans
+      parameters:
+        - name: repository_id
+          in: query
+          description: Filter by repository ID
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Filter by scan status
+          schema:
+            type: string
+            enum: [queued, running, completed, failed, cancelled]
+      responses:
+        '200':
+          description: List of scans
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanListResponse'
+
+    post:
+      tags:
+        - Scans
+      summary: Submit scan
+      description: Submit a new security scan for a repository
+      operationId: submitScan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitScanRequest'
+      responses:
+        '201':
+          description: Scan submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scan'
+
+  /scans/{scanId}/results:
+    get:
+      tags:
+        - Scans
+      summary: Get scan results
+      description: Get findings and results from a completed scan
+      operationId: getScanResults
+      parameters:
+        - $ref: '#/components/parameters/ScanId'
+      responses:
+        '200':
+          description: Scan results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanResults'
+
+  # Health check
+  /health:
+    get:
+      tags:
+        - System
+      summary: Health check
+      description: Check system health and availability
+      operationId: healthCheck
+      security: []
+      responses:
+        '200':
+          description: System is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    ScanId:
+      name: scanId
+      in: path
+      required: true
+      description: Scan ID
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    RateLimited:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    LoginRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          example: "developer@company.com"
+        password:
+          type: string
+          format: password
+
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT authentication token
+        user:
+          $ref: '#/components/schemas/User'
+        expires_at:
+          type: string
+          format: date-time
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [admin, developer, viewer]
+
+    Repository:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        url:
+          type: string
+          format: uri
+        language:
+          type: string
+        branch:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    CreateRepositoryRequest:
+      type: object
+      required:
+        - name
+        - url
+        - language
+      properties:
+        name:
+          type: string
+        url:
+          type: string
+          format: uri
+        language:
+          type: string
+        branch:
+          type: string
+          default: "main"
+
+    RepositoryListResponse:
+      type: object
+      properties:
+        repositories:
+          type: array
+          items:
+            $ref: '#/components/schemas/Repository'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    Scan:
+      type: object
+      properties:
+        id:
+          type: string
+        repository_id:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, completed, failed, cancelled]
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        findings_count:
+          type: integer
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+
+    SubmitScanRequest:
+      type: object
+      required:
+        - repository_id
+      properties:
+        repository_id:
+          type: string
+        scan_type:
+          type: string
+          enum: [full, incremental]
+          default: "full"
+        agents:
+          type: array
+          items:
+            type: string
+
+    ScanListResponse:
+      type: object
+      properties:
+        scans:
+          type: array
+          items:
+            $ref: '#/components/schemas/Scan'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    ScanResults:
+      type: object
+      properties:
+        scan:
+          $ref: '#/components/schemas/Scan'
+        findings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Finding'
+
+    Finding:
+      type: object
+      properties:
+        id:
+          type: string
+        rule_id:
+          type: string
+        title:
+          type: string
+        severity:
+          type: string
+          enum: [critical, high, medium, low, info]
+        file_path:
+          type: string
+        line_number:
+          type: integer
+        tool:
+          type: string
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+        services:
+          type: object
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        total_pages:
+          type: integer
+
+    SuccessResponse:
+      type: object
+      properties:
+        message:
+          type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+
+tags:
+  - name: Authentication
+    description: User authentication and session management
+  - name: Repositories
+    description: Repository management operations
+  - name: Scans
+    description: Security scan operations
+  - name: System
+    description: System health and information endpoints

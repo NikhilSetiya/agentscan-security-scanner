@@ -92,6 +92,40 @@
   cursor: wait;
 }
 
+/* Icon styles */
+.btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.btn-icon-left {
+  margin-right: var(--spacing-2);
+}
+
+.btn-icon-right {
+  margin-left: var(--spacing-2);
+}
+
+.btn-icon-only {
+  padding: var(--spacing-2);
+  aspect-ratio: 1;
+}
+
+.btn-icon-only.btn-sm {
+  padding: var(--spacing-1);
+}
+
+.btn-icon-only.btn-lg {
+  padding: var(--spacing-3);
+}
+
+.btn-text {
+  display: flex;
+  align-items: center;
+}
+
 /* Spinner */
 .btn-spinner {
   width: 16px;

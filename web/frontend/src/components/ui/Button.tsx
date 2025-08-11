@@ -7,10 +7,27 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
   children: React.ReactNode;
+  loadingText?: string;
+  icon?: React.ReactNode;
+  iconPosition?: 'left' | 'right';
 }
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = 'primary', size = 'md', loading = false, disabled, children, ...props }, ref) => {
+  ({ 
+    className, 
+    variant = 'primary', 
+    size = 'md', 
+    loading = false, 
+    disabled, 
+    children, 
+    loadingText,
+    icon,
+    iconPosition = 'left',
+    'aria-label': ariaLabel,
+    ...props 
+  }, ref) => {
+    const isDisabled = disabled || loading;
+    
     return (
       <button
         className={clsx(
@@ -19,16 +36,19 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           `btn-${size}`,
           {
             'btn-loading': loading,
-            'btn-disabled': disabled || loading,
+            'btn-disabled': isDisabled,
+            'btn-icon-only': !children && icon,
           },
           className
         )}
-        disabled={disabled || loading}
+        disabled={isDisabled}
+        aria-label={loading ? loadingText || 'Loading...' : ariaLabel}
+        aria-busy={loading}
         ref={ref}
         {...props}
       >
         {loading && (
-          <svg className="btn-spinner" viewBox="0 0 24 24">
+          <svg className="btn-spinner" viewBox="0 0 24 24" aria-hidden="true">
             <circle
               className="btn-spinner-circle"
               cx="12"
@@ -39,7 +59,26 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
             />
           </svg>
         )}
-        {children}
+        
+        {!loading && icon && iconPosition === 'left' && (
+          <span className="btn-icon btn-icon-left" aria-hidden="true">
+            {icon}
+          </span>
+        )}
+        
+        {!loading && children && (
+          <span className="btn-text">{children}</span>
+        )}
+        
+        {loading && loadingText && (
+          <span className="btn-text">{loadingText}</span>
+        )}
+        
+        {!loading && icon && iconPosition === 'right' && (
+          <span className="btn-icon btn-icon-right" aria-hidden="true">
+            {icon}
+          </span>
+        )}
       </button>
     );
   }

@@ -186,6 +186,38 @@
   margin-top: var(--spacing-4);
 }
 
+/* Chart skeleton */
+.chart-skeleton {
+  padding: var(--spacing-4) 0;
+}
+
+/* Enhanced hover effects */
+.hover-lift {
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Staggered animations */
+.stats-grid .animate-fade-in {
+  opacity: 0;
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+.stats-grid .stagger-1 { animation-delay: 0.1s; }
+.stats-grid .stagger-2 { animation-delay: 0.2s; }
+.stats-grid .stagger-3 { animation-delay: 0.3s; }
+.stats-grid .stagger-4 { animation-delay: 0.4s; }
+
+/* Enhanced table animations */
+.table tbody .animate-fade-in {
+  opacity: 0;
+  animation: slideUp 0.4s ease-out forwards;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
   .dashboard-header {
@@ -195,10 +227,12 @@
   
   .dashboard-actions {
     justify-content: stretch;
+    flex-wrap: wrap;
   }
   
   .dashboard-actions .btn {
     flex: 1;
+    min-width: 120px;
   }
   
   .stats-grid {
@@ -219,6 +253,12 @@
   .findings-summary {
     flex-direction: column;
     gap: var(--spacing-1);
+  }
+  
+  /* Disable hover effects on mobile */
+  .hover-lift:hover {
+    transform: none;
+    box-shadow: none;
   }
 }
 

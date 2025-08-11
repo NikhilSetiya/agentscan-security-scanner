@@ -25,6 +25,10 @@
 
 /* Mobile layout */
 @media (max-width: 768px) {
+  .main-content {
+    margin-top: calc(var(--nav-height) + 60px); /* Account for mobile nav height */
+  }
+  
   .content-container {
     padding: var(--spacing-4);
   }

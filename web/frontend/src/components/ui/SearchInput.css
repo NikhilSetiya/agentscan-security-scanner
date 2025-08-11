@@ -1,0 +1,196 @@
+.search-input {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-gray-300);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+  width: 100%;
+  max-width: 400px;
+}
+
+.search-input:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.search-input:hover:not(:focus-within) {
+  border-color: var(--color-gray-400);
+}
+
+/* Size variants */
+.search-input-sm {
+  height: 32px;
+  padding: 0 var(--spacing-2);
+}
+
+.search-input-md {
+  height: 40px;
+  padding: 0 var(--spacing-3);
+}
+
+.search-input-lg {
+  height: 48px;
+  padding: 0 var(--spacing-4);
+}
+
+/* Icon */
+.search-input-icon {
+  display: flex;
+  align-items: center;
+  color: var(--color-gray-400);
+  flex-shrink: 0;
+  margin-right: var(--spacing-2);
+}
+
+.search-input:focus-within .search-input-icon {
+  color: var(--color-primary);
+}
+
+/* Input field */
+.search-input-field {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: var(--font-size-sm);
+  color: var(--color-gray-900);
+  padding: 0;
+  min-width: 0;
+}
+
+.search-input-field::placeholder {
+  color: var(--color-gray-400);
+}
+
+.search-input-field:disabled {
+  color: var(--color-gray-400);
+  cursor: not-allowed;
+}
+
+.search-input-lg .search-input-field {
+  font-size: var(--font-size-base);
+}
+
+/* Loading spinner */
+.search-input-loading {
+  display: flex;
+  align-items: center;
+  margin-left: var(--spacing-2);
+}
+
+.search-loading-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--color-gray-200);
+  border-top: 2px solid var(--color-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+/* Clear button */
+.search-input-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--color-gray-400);
+  cursor: pointer;
+  padding: var(--spacing-1);
+  border-radius: var(--radius-sm);
+  margin-left: var(--spacing-1);
+  transition: all var(--transition-fast);
+}
+
+.search-input-clear:hover {
+  color: var(--color-gray-600);
+  background: var(--color-gray-100);
+}
+
+.search-input-clear:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Keyboard shortcut hint */
+.search-input-shortcut {
+  display: flex;
+  align-items: center;
+  margin-left: var(--spacing-2);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.search-input:not(:focus-within) .search-input-shortcut {
+  opacity: 1;
+}
+
+.search-input-shortcut kbd {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  background: var(--color-gray-100);
+  color: var(--color-gray-500);
+  padding: 2px var(--spacing-1);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-gray-200);
+  min-width: 20px;
+  text-align: center;
+}
+
+/* Hide shortcut when input has value or is focused */
+.search-input:focus-within .search-input-shortcut,
+.search-input:has(.search-input-field:not(:placeholder-shown)) .search-input-shortcut {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Disabled state */
+.search-input:has(.search-input-field:disabled) {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.search-input:has(.search-input-field:disabled) .search-input-icon,
+.search-input:has(.search-input-field:disabled) .search-input-shortcut {
+  opacity: 0.5;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .search-input {
+    max-width: none;
+  }
+  
+  .search-input-shortcut {
+    display: none;
+  }
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .search-input,
+  .search-input-icon,
+  .search-input-clear,
+  .search-input-shortcut {
+    transition: none;
+  }
+  
+  .search-loading-spinner {
+    animation: none;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+  .search-input {
+    border-width: 2px;
+  }
+  
+  .search-input:focus-within {
+    border-color: var(--color-primary);
+    box-shadow: none;
+  }
+}

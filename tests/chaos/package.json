@@ -1,0 +1,29 @@
+{
+  "name": "agentscan-chaos-tests",
+  "version": "1.0.0",
+  "description": "Chaos engineering tests for AgentScan system resilience",
+  "main": "index.js",
+  "scripts": {
+    "test": "node chaos-runner.js",
+    "test:network": "node experiments/network-chaos.js",
+    "test:database": "node experiments/database-chaos.js",
+    "test:memory": "node experiments/memory-chaos.js",
+    "test:cpu": "node experiments/cpu-chaos.js",
+    "test:disk": "node experiments/disk-chaos.js",
+    "test:dependencies": "node experiments/dependency-chaos.js",
+    "test:all": "node run-all-experiments.js",
+    "report": "node generate-chaos-report.js"
+  },
+  "keywords": ["chaos-engineering", "resilience", "testing", "reliability"],
+  "author": "AgentScan Team",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.5.0",
+    "uuid": "^9.0.1",
+    "dockerode": "^3.3.5",
+    "kubernetes-client": "^9.0.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}

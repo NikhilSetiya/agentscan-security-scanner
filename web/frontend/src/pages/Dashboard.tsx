@@ -1,16 +1,19 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/Table';
 import { Button } from '../components/ui/Button';
+import { LoadingSkeleton, StatCardSkeleton, TableSkeleton } from '../components/ui/LoadingSkeleton';
+import { NetworkError } from '../components/ui/ErrorState';
+import { FadeIn, StaggeredList, AnimateOnScroll } from '../components/ui/Transitions';
 import { 
   Shield, 
   AlertTriangle, 
   CheckCircle, 
   Clock,
-
   Search,
   Filter,
-  Download
+  Download,
+  RefreshCw
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import './Dashboard.css';
@@ -135,203 +138,316 @@ const FindingsSummary: React.FC<{ findings: { high: number; medium: number; low:
 };
 
 export const Dashboard: React.FC = () => {
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Simulate data loading
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        // Simulate API call
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        setIsLoading(false);
+      } catch (err) {
+        setError('Failed to load dashboard data');
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      // Simulate refresh
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      setError(null);
+    } catch (err) {
+      setError('Failed to refresh data');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const handleNewScan = () => {
+    // Dispatch custom event for new scan
+    document.dispatchEvent(new CustomEvent('new-scan'));
+  };
+
+  // Listen for global refresh event
+  useEffect(() => {
+    const handleGlobalRefresh = () => handleRefresh();
+    document.addEventListener('refresh-data', handleGlobalRefresh);
+    return () => document.removeEventListener('refresh-data', handleGlobalRefresh);
+  }, []);
+
+  if (error && !isLoading) {
+    return (
+      <div className="dashboard">
+        <NetworkError onRetry={handleRefresh} />
+      </div>
+    );
+  }
+
   return (
     <div className="dashboard">
-      <div className="dashboard-header">
-        <div>
-          <h1 className="dashboard-title">Security Dashboard</h1>
-          <p className="dashboard-subtitle">
-            Monitor your security posture across all repositories
-          </p>
+      <FadeIn>
+        <div className="dashboard-header">
+          <div>
+            <h1 className="dashboard-title">Security Dashboard</h1>
+            <p className="dashboard-subtitle">
+              Monitor your security posture across all repositories
+            </p>
+          </div>
+          <div className="dashboard-actions">
+            <Button 
+              variant="secondary" 
+              size="md"
+              icon={<RefreshCw size={16} />}
+              loading={isRefreshing}
+              loadingText="Refreshing..."
+              onClick={handleRefresh}
+              aria-label="Refresh dashboard data"
+            >
+              Refresh
+            </Button>
+            <Button 
+              variant="secondary" 
+              size="md"
+              icon={<Filter size={16} />}
+              aria-label="Filter results"
+            >
+              Filter
+            </Button>
+            <Button 
+              variant="secondary" 
+              size="md"
+              icon={<Download size={16} />}
+              aria-label="Export data"
+            >
+              Export
+            </Button>
+            <Button 
+              variant="primary" 
+              size="md"
+              icon={<Search size={16} />}
+              onClick={handleNewScan}
+              aria-label="Start new security scan"
+            >
+              New Scan
+            </Button>
+          </div>
         </div>
-        <div className="dashboard-actions">
-          <Button variant="secondary" size="md">
-            <Filter size={16} />
-            Filter
-          </Button>
-          <Button variant="secondary" size="md">
-            <Download size={16} />
-            Export
-          </Button>
-          <Button variant="primary" size="md">
-            <Search size={16} />
-            New Scan
-          </Button>
-        </div>
-      </div>
+      </FadeIn>
 
       {/* Statistics Cards */}
       <div className="stats-grid">
-        <Card hover>
-          <CardContent>
-            <div className="stat-card">
-              <div className="stat-icon stat-icon-primary">
-                <Shield size={24} />
-              </div>
-              <div className="stat-content">
-                <div className="stat-value">{scanStats.totalScans.toLocaleString()}</div>
-                <div className="stat-label">Total Scans</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        {isLoading ? (
+          <>
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+          </>
+        ) : (
+          <StaggeredList staggerDelay={100}>
+            <Card hover className="hover-lift">
+              <CardContent>
+                <div className="stat-card">
+                  <div className="stat-icon stat-icon-primary">
+                    <Shield size={24} />
+                  </div>
+                  <div className="stat-content">
+                    <div className="stat-value">{scanStats.totalScans.toLocaleString()}</div>
+                    <div className="stat-label">Total Scans</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
-        <Card hover>
-          <CardContent>
-            <div className="stat-card">
-              <div className="stat-icon stat-icon-error">
-                <AlertTriangle size={24} />
-              </div>
-              <div className="stat-content">
-                <div className="stat-value">{scanStats.highSeverity}</div>
-                <div className="stat-label">High Severity</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            <Card hover className="hover-lift">
+              <CardContent>
+                <div className="stat-card">
+                  <div className="stat-icon stat-icon-error">
+                    <AlertTriangle size={24} />
+                  </div>
+                  <div className="stat-content">
+                    <div className="stat-value">{scanStats.highSeverity}</div>
+                    <div className="stat-label">High Severity</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
-        <Card hover>
-          <CardContent>
-            <div className="stat-card">
-              <div className="stat-icon stat-icon-warning">
-                <AlertTriangle size={24} />
-              </div>
-              <div className="stat-content">
-                <div className="stat-value">{scanStats.mediumSeverity}</div>
-                <div className="stat-label">Medium Severity</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            <Card hover className="hover-lift">
+              <CardContent>
+                <div className="stat-card">
+                  <div className="stat-icon stat-icon-warning">
+                    <AlertTriangle size={24} />
+                  </div>
+                  <div className="stat-content">
+                    <div className="stat-value">{scanStats.mediumSeverity}</div>
+                    <div className="stat-label">Medium Severity</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
-        <Card hover>
-          <CardContent>
-            <div className="stat-card">
-              <div className="stat-icon stat-icon-info">
-                <AlertTriangle size={24} />
-              </div>
-              <div className="stat-content">
-                <div className="stat-value">{scanStats.lowSeverity}</div>
-                <div className="stat-label">Low Severity</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            <Card hover className="hover-lift">
+              <CardContent>
+                <div className="stat-card">
+                  <div className="stat-icon stat-icon-info">
+                    <AlertTriangle size={24} />
+                  </div>
+                  <div className="stat-content">
+                    <div className="stat-value">{scanStats.lowSeverity}</div>
+                    <div className="stat-label">Low Severity</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </StaggeredList>
+        )}
       </div>
 
       {/* Recent Scans Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Scans</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Repository</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Findings</TableHead>
-                <TableHead>Duration</TableHead>
-                <TableHead>Time</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {recentScans.map((scan) => (
-                <TableRow key={scan.id}>
-                  <TableCell>
-                    <div className="repository-name">{scan.repository}</div>
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge status={scan.status} />
-                  </TableCell>
-                  <TableCell>
-                    <FindingsSummary findings={scan.findings} />
-                  </TableCell>
-                  <TableCell>
-                    <span className="duration">
-                      {scan.duration || '-'}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <span className="timestamp">{scan.timestamp}</span>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      <AnimateOnScroll animation="slideUp" delay={200}>
+        <Card className="hover-lift">
+          <CardHeader>
+            <CardTitle>Recent Scans</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <TableSkeleton rows={5} columns={5} />
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Repository</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Findings</TableHead>
+                    <TableHead>Duration</TableHead>
+                    <TableHead>Time</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {recentScans.map((scan, index) => (
+                    <TableRow 
+                      key={scan.id}
+                      className={`animate-fade-in stagger-${Math.min(index + 1, 5)}`}
+                    >
+                      <TableCell>
+                        <div className="repository-name">{scan.repository}</div>
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status={scan.status} />
+                      </TableCell>
+                      <TableCell>
+                        <FindingsSummary findings={scan.findings} />
+                      </TableCell>
+                      <TableCell>
+                        <span className="duration">
+                          {scan.duration || '-'}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="timestamp">{scan.timestamp}</span>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      </AnimateOnScroll>
 
       {/* Findings Trend Chart */}
-      <Card>
-        <CardHeader>
-          <div className="chart-header">
-            <CardTitle>Findings Trend</CardTitle>
-            <div className="chart-legend">
-              <div className="legend-item">
-                <div className="legend-color" style={{ backgroundColor: 'var(--color-error)' }}></div>
-                <span>High</span>
-              </div>
-              <div className="legend-item">
-                <div className="legend-color" style={{ backgroundColor: 'var(--color-warning)' }}></div>
-                <span>Medium</span>
-              </div>
-              <div className="legend-item">
-                <div className="legend-color" style={{ backgroundColor: 'var(--color-info)' }}></div>
-                <span>Low</span>
+      <AnimateOnScroll animation="slideUp" delay={400}>
+        <Card className="hover-lift">
+          <CardHeader>
+            <div className="chart-header">
+              <CardTitle>Findings Trend</CardTitle>
+              <div className="chart-legend">
+                <div className="legend-item">
+                  <div className="legend-color" style={{ backgroundColor: 'var(--color-error)' }}></div>
+                  <span>High</span>
+                </div>
+                <div className="legend-item">
+                  <div className="legend-color" style={{ backgroundColor: 'var(--color-warning)' }}></div>
+                  <span>Medium</span>
+                </div>
+                <div className="legend-item">
+                  <div className="legend-color" style={{ backgroundColor: 'var(--color-info)' }}></div>
+                  <span>Low</span>
+                </div>
               </div>
             </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="chart-container">
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={trendData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-gray-200)" />
-                <XAxis 
-                  dataKey="date" 
-                  stroke="var(--color-gray-500)"
-                  fontSize={12}
-                  tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                />
-                <YAxis 
-                  stroke="var(--color-gray-500)"
-                  fontSize={12}
-                />
-                <Tooltip 
-                  contentStyle={{
-                    backgroundColor: 'var(--color-bg-primary)',
-                    border: '1px solid var(--color-gray-200)',
-                    borderRadius: 'var(--radius-md)',
-                    fontSize: '14px',
-                  }}
-                />
-                <Line 
-                  type="monotone" 
-                  dataKey="high" 
-                  stroke="var(--color-error)" 
-                  strokeWidth={2}
-                  dot={{ fill: 'var(--color-error)', strokeWidth: 2, r: 4 }}
-                />
-                <Line 
-                  type="monotone" 
-                  dataKey="medium" 
-                  stroke="var(--color-warning)" 
-                  strokeWidth={2}
-                  dot={{ fill: 'var(--color-warning)', strokeWidth: 2, r: 4 }}
-                />
-                <Line 
-                  type="monotone" 
-                  dataKey="low" 
-                  stroke="var(--color-info)" 
-                  strokeWidth={2}
-                  dot={{ fill: 'var(--color-info)', strokeWidth: 2, r: 4 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <div className="chart-skeleton">
+                <LoadingSkeleton height={300} />
+              </div>
+            ) : (
+              <div className="chart-container">
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={trendData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-gray-200)" />
+                    <XAxis 
+                      dataKey="date" 
+                      stroke="var(--color-gray-500)"
+                      fontSize={12}
+                      tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    />
+                    <YAxis 
+                      stroke="var(--color-gray-500)"
+                      fontSize={12}
+                    />
+                    <Tooltip 
+                      contentStyle={{
+                        backgroundColor: 'var(--color-bg-primary)',
+                        border: '1px solid var(--color-gray-200)',
+                        borderRadius: 'var(--radius-md)',
+                        fontSize: '14px',
+                        boxShadow: 'var(--shadow-lg)',
+                      }}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="high" 
+                      stroke="var(--color-error)" 
+                      strokeWidth={2}
+                      dot={{ fill: 'var(--color-error)', strokeWidth: 2, r: 4 }}
+                      activeDot={{ r: 6, stroke: 'var(--color-error)', strokeWidth: 2 }}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="medium" 
+                      stroke="var(--color-warning)" 
+                      strokeWidth={2}
+                      dot={{ fill: 'var(--color-warning)', strokeWidth: 2, r: 4 }}
+                      activeDot={{ r: 6, stroke: 'var(--color-warning)', strokeWidth: 2 }}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="low" 
+                      stroke="var(--color-info)" 
+                      strokeWidth={2}
+                      dot={{ fill: 'var(--color-info)', strokeWidth: 2, r: 4 }}
+                      activeDot={{ r: 6, stroke: 'var(--color-info)', strokeWidth: 2 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </AnimateOnScroll>
     </div>
   );
 };

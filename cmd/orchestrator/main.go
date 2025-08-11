@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentscan/agentscan/agents/sast/bandit"
+	"github.com/agentscan/agentscan/agents/sast/eslint"
 	"github.com/agentscan/agentscan/agents/sast/semgrep"
 	"github.com/agentscan/agentscan/agents/sca/govulncheck"
 	"github.com/agentscan/agentscan/agents/sca/npm"
@@ -110,6 +111,12 @@ func registerAgents(agentManager *orchestrator.AgentManager) error {
 	}
 	log.Println("Registered Bandit Python agent")
 
+	eslintAgent := eslint.NewAgent()
+	if err := agentManager.RegisterAgent("eslint-security", eslintAgent); err != nil {
+		return err
+	}
+	log.Println("Registered ESLint Security agent")
+
 	// Register SCA (dependency scanning) agents
 	npmAgent := npm.NewAgent()
 	if err := agentManager.RegisterAgent("npm-audit", npmAgent); err != nil {
@@ -130,7 +137,6 @@ func registerAgents(agentManager *orchestrator.AgentManager) error {
 	log.Println("Registered govulncheck SCA agent")
 
 	// TODO: Register additional agents as they are implemented
-	// - ESLint Security agent
 	// - Secret scanning agents
 
 	return nil

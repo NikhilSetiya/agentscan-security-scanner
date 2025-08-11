@@ -1,0 +1,28 @@
+{
+  "name": "agentscan-e2e-tests",
+  "version": "1.0.0",
+  "description": "End-to-end tests for AgentScan security scanner",
+  "main": "index.js",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:ui": "playwright test --ui",
+    "test:report": "playwright show-report",
+    "test:docker": "docker-compose -f docker-compose.test.yml up --build --abort-on-container-exit",
+    "install:browsers": "playwright install"
+  },
+  "keywords": ["e2e", "testing", "security", "agentscan"],
+  "author": "AgentScan Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "@types/node": "^20.8.0",
+    "typescript": "^5.2.0"
+  },
+  "dependencies": {
+    "axios": "^1.5.0",
+    "jsonwebtoken": "^9.0.2",
+    "uuid": "^9.0.1"
+  }
+}

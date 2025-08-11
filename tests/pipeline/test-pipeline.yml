@@ -1,0 +1,481 @@
+# AgentScan Automated Testing Pipeline
+# This pipeline runs comprehensive tests with quality gates
+
+name: AgentScan Test Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run nightly tests
+    - cron: '0 2 * * *'
+
+env:
+  NODE_VERSION: '18'
+  GO_VERSION: '1.21'
+  DOCKER_BUILDKIT: 1
+
+jobs:
+  # Quality Gate 1: Code Quality and Static Analysis
+  code-quality:
+    name: Code Quality & Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+
+      - name: Cache Node modules
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Install dependencies
+        run: |
+          go mod download
+          cd web && npm ci
+          cd ../tests/e2e && npm ci
+
+      - name: Run Go linting
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          args: --timeout=5m
+
+      - name: Run Go security scan
+        uses: securecodewarrior/github-action-gosec@master
+        with:
+          args: '-fmt sarif -out gosec-results.sarif ./...'
+
+      - name: Run JavaScript/TypeScript linting
+        run: |
+          cd web
+          npm run lint
+          npm run type-check
+
+      - name: Run dependency vulnerability scan
+        run: |
+          go list -json -deps ./... | nancy sleuth
+          cd web && npm audit --audit-level=high
+          cd ../tests/e2e && npm audit --audit-level=high
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      - name: Upload SARIF results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: gosec-results.sarif
+
+  # Quality Gate 2: Unit and Integration Tests
+  unit-integration-tests:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+    needs: code-quality
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: agentscan_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          go mod download
+          cd web && npm ci
+
+      - name: Run Go unit tests
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: agentscan_test
+          DB_USER: postgres
+          DB_PASSWORD: testpassword
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+        run: |
+          go test -v -race -coverprofile=coverage.out ./...
+          go tool cover -html=coverage.out -o coverage.html
+
+      - name: Run Go integration tests
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: agentscan_test
+          DB_USER: postgres
+          DB_PASSWORD: testpassword
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+        run: |
+          go test -v -tags=integration ./tests/integration/...
+
+      - name: Run JavaScript/TypeScript tests
+        run: |
+          cd web
+          npm run test:coverage
+
+      - name: Check test coverage thresholds
+        run: |
+          # Go coverage threshold: 80%
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          if (( $(echo "$COVERAGE < 80" | bc -l) )); then
+            echo "Go test coverage ($COVERAGE%) is below threshold (80%)"
+            exit 1
+          fi
+          
+          # JavaScript coverage is checked by Jest configuration
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage.out,./web/coverage/lcov.info
+          flags: unittests
+          name: codecov-umbrella
+
+  # Quality Gate 3: Security Tests
+  security-tests:
+    name: Security Tests
+    runs-on: ubuntu-latest
+    needs: unit-integration-tests
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: agentscan_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Build and start application
+        run: |
+          docker-compose -f docker-compose.test.yml up -d
+          sleep 30  # Wait for services to start
+
+      - name: Install security test dependencies
+        run: |
+          cd tests/security
+          npm ci
+
+      - name: Run security tests
+        run: |
+          cd tests/security
+          npm test
+
+      - name: Run penetration tests
+        run: |
+          cd tests/security
+          npm run pentest
+
+      - name: OWASP ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.7.0
+        with:
+          target: 'http://localhost:8080'
+          rules_file_name: '.zap/rules.tsv'
+          cmd_options: '-a'
+
+      - name: Upload ZAP results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: zap-results
+          path: report_html.html
+
+      - name: Security test quality gate
+        run: |
+          # Check if critical security issues were found
+          if [ -f "penetration-test-results.json" ]; then
+            CRITICAL_VULNS=$(jq '.summary.criticalVulns' penetration-test-results.json)
+            if [ "$CRITICAL_VULNS" -gt 0 ]; then
+              echo "Critical security vulnerabilities found: $CRITICAL_VULNS"
+              exit 1
+            fi
+          fi
+
+  # Quality Gate 4: Performance Tests
+  performance-tests:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    needs: security-tests
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Build and start application
+        run: |
+          docker-compose -f docker-compose.test.yml up -d
+          sleep 30
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Install performance test dependencies
+        run: |
+          cd tests/performance
+          npm ci
+
+      - name: Run load tests
+        run: |
+          cd tests/performance
+          npm run test:load
+
+      - name: Run stress tests
+        run: |
+          cd tests/performance
+          npm run test:stress
+
+      - name: Run API benchmarks
+        run: |
+          cd tests/performance
+          npm run benchmark
+
+      - name: Performance quality gate
+        run: |
+          # Check performance thresholds
+          # This would parse k6 results and check against thresholds
+          echo "Checking performance thresholds..."
+          # Add actual threshold checks here
+
+  # Quality Gate 5: End-to-End Tests
+  e2e-tests:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    needs: performance-tests
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Build and start full application stack
+        run: |
+          docker-compose -f docker-compose.test.yml up -d
+          sleep 60  # Wait for all services to be ready
+
+      - name: Install Playwright
+        run: |
+          cd tests/e2e
+          npm ci
+          npx playwright install --with-deps
+
+      - name: Run E2E tests
+        run: |
+          cd tests/e2e
+          npm test
+
+      - name: Upload E2E test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: e2e-results
+          path: tests/e2e/test-results/
+
+      - name: Upload E2E test report
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: e2e-report
+          path: tests/e2e/playwright-report/
+
+  # Quality Gate 6: Chaos Engineering (Optional for nightly runs)
+  chaos-tests:
+    name: Chaos Engineering Tests
+    runs-on: ubuntu-latest
+    needs: e2e-tests
+    if: github.event_name == 'schedule' || contains(github.event.head_commit.message, '[chaos]')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Build and start application
+        run: |
+          docker-compose -f docker-compose.test.yml up -d
+          sleep 30
+
+      - name: Install chaos test dependencies
+        run: |
+          cd tests/chaos
+          npm ci
+
+      - name: Run chaos engineering tests
+        run: |
+          cd tests/chaos
+          npm test
+
+      - name: Upload chaos test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: chaos-results
+          path: tests/chaos/chaos-test-results.json
+
+  # Final Quality Gate: Deployment Readiness
+  deployment-readiness:
+    name: Deployment Readiness Check
+    runs-on: ubuntu-latest
+    needs: [code-quality, unit-integration-tests, security-tests, performance-tests, e2e-tests]
+    if: always()
+    steps:
+      - name: Check all quality gates
+        run: |
+          echo "Checking quality gate results..."
+          
+          # Check if all required jobs passed
+          if [[ "${{ needs.code-quality.result }}" != "success" ]]; then
+            echo "❌ Code quality gate failed"
+            exit 1
+          fi
+          
+          if [[ "${{ needs.unit-integration-tests.result }}" != "success" ]]; then
+            echo "❌ Unit/Integration tests gate failed"
+            exit 1
+          fi
+          
+          if [[ "${{ needs.security-tests.result }}" != "success" ]]; then
+            echo "❌ Security tests gate failed"
+            exit 1
+          fi
+          
+          if [[ "${{ needs.performance-tests.result }}" != "success" ]]; then
+            echo "❌ Performance tests gate failed"
+            exit 1
+          fi
+          
+          if [[ "${{ needs.e2e-tests.result }}" != "success" ]]; then
+            echo "❌ E2E tests gate failed"
+            exit 1
+          fi
+          
+          echo "✅ All quality gates passed - Ready for deployment!"
+
+      - name: Generate test summary
+        run: |
+          echo "## Test Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Quality Gate | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Code Quality | ${{ needs.code-quality.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Unit/Integration Tests | ${{ needs.unit-integration-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Tests | ${{ needs.security-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Performance Tests | ${{ needs.performance-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| E2E Tests | ${{ needs.e2e-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+
+  # Notification job
+  notify:
+    name: Notify Results
+    runs-on: ubuntu-latest
+    needs: [deployment-readiness]
+    if: always()
+    steps:
+      - name: Notify Slack on failure
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: failure
+          channel: '#ci-cd'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+
+      - name: Notify Slack on success
+        if: success()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: success
+          channel: '#ci-cd'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow

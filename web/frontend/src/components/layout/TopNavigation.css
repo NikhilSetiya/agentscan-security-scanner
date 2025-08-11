@@ -3,9 +3,10 @@
   background: var(--color-bg-primary);
   border-bottom: 1px solid var(--color-gray-200);
   padding: 0 var(--spacing-6);
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr;
   align-items: center;
-  justify-content: space-between;
+  gap: var(--spacing-4);
   position: fixed;
   top: 0;
   left: 0;
@@ -17,6 +18,21 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-4);
+  justify-self: start;
+}
+
+.nav-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  max-width: 500px;
+  width: 100%;
+  justify-self: center;
+}
+
+.nav-search {
+  width: 100%;
+  max-width: 400px;
 }
 
 .nav-menu-toggle {
@@ -39,6 +55,11 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-2);
+  justify-self: end;
+}
+
+.nav-action-button {
+  position: relative;
 }
 
 .nav-user {
@@ -57,9 +78,50 @@
 }
 
 /* Mobile responsive */
+@media (max-width: 1024px) {
+  .top-nav {
+    grid-template-columns: auto 1fr auto;
+    gap: var(--spacing-3);
+  }
+  
+  .nav-center {
+    max-width: none;
+  }
+  
+  .nav-search {
+    max-width: none;
+  }
+}
+
 @media (max-width: 768px) {
   .top-nav {
     padding: 0 var(--spacing-4);
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+    height: auto;
+    min-height: var(--nav-height);
+    gap: var(--spacing-2);
+  }
+  
+  .nav-left {
+    grid-column: 1;
+    grid-row: 1;
+    justify-content: space-between;
+    width: 100%;
+  }
+  
+  .nav-center {
+    grid-column: 1;
+    grid-row: 2;
+    padding-bottom: var(--spacing-3);
+  }
+  
+  .nav-right {
+    position: absolute;
+    top: 50%;
+    right: var(--spacing-4);
+    transform: translateY(-50%);
+    gap: var(--spacing-1);
   }
   
   .nav-menu-toggle {
@@ -70,12 +132,18 @@
     display: none;
   }
   
-  .nav-right {
-    gap: var(--spacing-1);
-  }
-  
   .nav-user {
     margin-left: var(--spacing-1);
     padding-left: var(--spacing-2);
+  }
+}
+
+@media (max-width: 480px) {
+  .nav-right .nav-action-button {
+    display: none;
+  }
+  
+  .nav-right {
+    gap: 0;
   }
 }

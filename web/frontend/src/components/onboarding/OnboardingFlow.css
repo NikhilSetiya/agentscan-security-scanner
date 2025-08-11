@@ -1,0 +1,427 @@
+.onboarding-modal {
+  max-width: 700px;
+  width: 90vw;
+  max-height: 80vh;
+  padding: 0;
+}
+
+.onboarding-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: var(--spacing-8);
+  gap: var(--spacing-6);
+}
+
+/* Progress indicator */
+.onboarding-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+
+.progress-steps {
+  display: flex;
+  justify-content: center;
+  gap: var(--spacing-4);
+}
+
+.progress-step {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--color-gray-300);
+  background: var(--color-bg-primary);
+  color: var(--color-gray-500);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.progress-step:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.progress-step.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: white;
+}
+
+.progress-step.completed {
+  border-color: var(--color-success);
+  background: var(--color-success);
+  color: white;
+}
+
+.progress-bar {
+  height: 4px;
+  background: var(--color-gray-200);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: 2px;
+  transition: width var(--transition-normal);
+}
+
+/* Step content */
+.onboarding-step {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+}
+
+.step-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-4);
+  text-align: left;
+}
+
+.step-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.keyboard-icon {
+  font-size: 32px;
+}
+
+.step-text {
+  flex: 1;
+}
+
+.step-title {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-gray-900);
+  margin-bottom: var(--spacing-2);
+  line-height: 1.2;
+}
+
+.step-description {
+  font-size: var(--font-size-lg);
+  color: var(--color-gray-600);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.step-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* Welcome step */
+.onboarding-welcome {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+}
+
+.welcome-features {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+}
+
+.welcome-feature {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-3);
+  padding: var(--spacing-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-secondary);
+}
+
+.welcome-feature-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-primary);
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.welcome-feature h4 {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-gray-900);
+  margin: 0 0 var(--spacing-1) 0;
+}
+
+.welcome-feature p {
+  font-size: var(--font-size-sm);
+  color: var(--color-gray-600);
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Scan step */
+.onboarding-scan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+}
+
+.scan-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+}
+
+.scan-step {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-3);
+}
+
+.scan-step-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: white;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  flex-shrink: 0;
+}
+
+.scan-step h4 {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-gray-900);
+  margin: 0 0 var(--spacing-1) 0;
+}
+
+.scan-step p {
+  font-size: var(--font-size-sm);
+  color: var(--color-gray-600);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.scan-cta {
+  display: flex;
+  justify-content: center;
+  padding-top: var(--spacing-4);
+}
+
+/* Shortcuts step */
+.onboarding-shortcuts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+  align-items: center;
+}
+
+.shortcuts-preview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--spacing-4);
+  width: 100%;
+}
+
+.shortcut-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-3) var(--spacing-4);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-md);
+  gap: var(--spacing-3);
+}
+
+.shortcut-preview kbd {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  background: var(--color-bg-primary);
+  color: var(--color-gray-700);
+  padding: var(--spacing-1) var(--spacing-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-gray-200);
+  white-space: nowrap;
+}
+
+.shortcut-preview span {
+  font-size: var(--font-size-sm);
+  color: var(--color-gray-700);
+  font-weight: var(--font-weight-medium);
+}
+
+.shortcuts-note {
+  font-size: var(--font-size-sm);
+  color: var(--color-gray-500);
+  text-align: center;
+  margin: 0;
+}
+
+.shortcuts-note kbd {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  background: var(--color-gray-100);
+  color: var(--color-gray-700);
+  padding: 2px var(--spacing-1);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-gray-200);
+}
+
+/* Navigation */
+.onboarding-navigation {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: var(--spacing-4);
+  border-top: 1px solid var(--color-gray-200);
+}
+
+.nav-left,
+.nav-right {
+  display: flex;
+  gap: var(--spacing-3);
+  min-width: 120px;
+}
+
+.nav-right {
+  justify-content: flex-end;
+}
+
+.nav-center {
+  display: flex;
+  justify-content: center;
+}
+
+.step-counter {
+  font-size: var(--font-size-sm);
+  color: var(--color-gray-500);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Skip option */
+.onboarding-skip {
+  display: flex;
+  justify-content: center;
+  padding-top: var(--spacing-2);
+}
+
+.skip-button {
+  background: none;
+  border: none;
+  color: var(--color-gray-500);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  text-decoration: underline;
+  transition: color var(--transition-fast);
+}
+
+.skip-button:hover {
+  color: var(--color-gray-700);
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .onboarding-modal {
+    width: 95vw;
+    max-width: none;
+    max-height: 90vh;
+  }
+  
+  .onboarding-container {
+    padding: var(--spacing-6);
+    gap: var(--spacing-4);
+  }
+  
+  .step-header {
+    flex-direction: column;
+    text-align: center;
+    gap: var(--spacing-3);
+  }
+  
+  .step-icon {
+    width: 60px;
+    height: 60px;
+    align-self: center;
+  }
+  
+  .step-title {
+    font-size: var(--font-size-xl);
+  }
+  
+  .step-description {
+    font-size: var(--font-size-base);
+  }
+  
+  .progress-steps {
+    gap: var(--spacing-2);
+  }
+  
+  .progress-step {
+    width: 28px;
+    height: 28px;
+    font-size: var(--font-size-xs);
+  }
+  
+  .shortcuts-preview {
+    grid-template-columns: 1fr;
+  }
+  
+  .onboarding-navigation {
+    flex-direction: column;
+    gap: var(--spacing-3);
+  }
+  
+  .nav-left,
+  .nav-right {
+    width: 100%;
+    justify-content: center;
+  }
+  
+  .nav-center {
+    order: -1;
+  }
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .progress-step,
+  .progress-fill {
+    transition: none;
+  }
+}
+
+/* Focus styles */
+.progress-step:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.skip-button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}

@@ -1,0 +1,32 @@
+{
+  "name": "agentscan-performance-tests",
+  "version": "1.0.0",
+  "description": "Performance and load testing for AgentScan",
+  "main": "index.js",
+  "scripts": {
+    "test": "k6 run tests/load-test.js",
+    "test:smoke": "k6 run --vus 1 --duration 30s tests/smoke-test.js",
+    "test:load": "k6 run --vus 10 --duration 5m tests/load-test.js",
+    "test:stress": "k6 run --vus 50 --duration 10m tests/stress-test.js",
+    "test:spike": "k6 run tests/spike-test.js",
+    "test:volume": "k6 run --vus 100 --duration 30m tests/volume-test.js",
+    "test:endurance": "k6 run --vus 20 --duration 2h tests/endurance-test.js",
+    "benchmark": "node benchmarks/api-benchmark.js",
+    "profile": "node --prof benchmarks/memory-profile.js",
+    "analyze-profile": "node --prof-process isolate-*.log > profile-analysis.txt"
+  },
+  "keywords": ["performance", "load-testing", "k6", "benchmarking"],
+  "author": "AgentScan Team",
+  "license": "MIT",
+  "devDependencies": {
+    "k6": "^0.47.0",
+    "autocannon": "^7.12.0",
+    "clinic": "^12.1.0",
+    "0x": "^5.5.0"
+  },
+  "dependencies": {
+    "axios": "^1.5.0",
+    "uuid": "^9.0.1",
+    "faker": "^6.6.6"
+  }
+}

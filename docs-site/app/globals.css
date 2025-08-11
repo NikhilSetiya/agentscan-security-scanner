@@ -1,0 +1,178 @@
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* Prism.js syntax highlighting */
+@import 'prismjs/themes/prism-tomorrow.css';
+
+:root {
+  --font-inter: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', Menlo, Monaco, monospace;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Focus styles */
+.focus-ring {
+  @apply focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2;
+}
+
+/* Code blocks */
+pre[class*="language-"] {
+  @apply rounded-lg border border-gray-200 bg-gray-900 text-gray-100;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  padding: 1rem;
+  overflow-x: auto;
+  margin: 1.5rem 0;
+}
+
+code[class*="language-"] {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+}
+
+/* Inline code */
+:not(pre) > code {
+  @apply bg-gray-100 text-gray-800 px-1.5 py-0.5 rounded text-sm font-mono;
+}
+
+/* Tables */
+.prose table {
+  @apply w-full border-collapse border border-gray-200;
+}
+
+.prose th {
+  @apply bg-gray-50 border border-gray-200 px-4 py-2 text-left font-semibold;
+}
+
+.prose td {
+  @apply border border-gray-200 px-4 py-2;
+}
+
+/* Headings with anchor links */
+.heading-anchor {
+  @apply opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-gray-400 hover:text-primary-500 ml-2;
+}
+
+/* Navigation active states */
+.nav-link-active {
+  @apply text-primary-600 bg-primary-50 border-primary-200;
+}
+
+/* Custom components */
+.card {
+  @apply bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200;
+}
+
+.badge {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+
+.badge-primary {
+  @apply bg-primary-100 text-primary-800;
+}
+
+.badge-success {
+  @apply bg-success-100 text-success-800;
+}
+
+.badge-warning {
+  @apply bg-warning-100 text-warning-800;
+}
+
+.badge-error {
+  @apply bg-error-100 text-error-800;
+}
+
+/* Button styles */
+.btn {
+  @apply inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md focus-ring transition-colors duration-200;
+}
+
+.btn-primary {
+  @apply bg-primary-600 text-white hover:bg-primary-700;
+}
+
+.btn-secondary {
+  @apply bg-gray-100 text-gray-900 hover:bg-gray-200 border-gray-300;
+}
+
+.btn-outline {
+  @apply bg-transparent border-gray-300 text-gray-700 hover:bg-gray-50;
+}
+
+/* Alert styles */
+.alert {
+  @apply p-4 rounded-lg border-l-4;
+}
+
+.alert-info {
+  @apply bg-blue-50 border-blue-400 text-blue-800;
+}
+
+.alert-success {
+  @apply bg-success-50 border-success-400 text-success-800;
+}
+
+.alert-warning {
+  @apply bg-warning-50 border-warning-400 text-warning-800;
+}
+
+.alert-error {
+  @apply bg-error-50 border-error-400 text-error-800;
+}
+
+/* Loading states */
+.loading-spinner {
+  @apply animate-spin rounded-full border-2 border-gray-300 border-t-primary-600;
+}
+
+/* Responsive utilities */
+@media (max-width: 768px) {
+  .mobile-hidden {
+    display: none;
+  }
+}
+
+/* Print styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  .prose {
+    max-width: none;
+  }
+  
+  pre[class*="language-"] {
+    background: #f8f9fa !important;
+    color: #333 !important;
+    border: 1px solid #ddd !important;
+  }
+}

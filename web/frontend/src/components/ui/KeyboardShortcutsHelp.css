@@ -1,0 +1,137 @@
+.shortcuts-help-modal {
+  max-width: 600px;
+  width: 90vw;
+}
+
+.shortcuts-help-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.shortcuts-help-title-container {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  color: var(--color-gray-900);
+}
+
+.shortcuts-help-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.shortcuts-category {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+
+.shortcuts-category-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-gray-900);
+  margin: 0;
+  padding-bottom: var(--spacing-2);
+  border-bottom: 1px solid var(--color-gray-200);
+}
+
+.shortcuts-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.shortcut-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-2) var(--spacing-3);
+  border-radius: var(--radius-md);
+  transition: background-color var(--transition-fast);
+}
+
+.shortcut-item:hover {
+  background: var(--color-bg-secondary);
+}
+
+.shortcut-description {
+  font-size: var(--font-size-sm);
+  color: var(--color-gray-700);
+  flex: 1;
+}
+
+.shortcut-keys {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  background: var(--color-gray-100);
+  color: var(--color-gray-700);
+  padding: var(--spacing-1) var(--spacing-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-gray-200);
+  white-space: nowrap;
+}
+
+.shortcuts-help-footer {
+  margin-top: var(--spacing-4);
+  padding-top: var(--spacing-4);
+  border-top: 1px solid var(--color-gray-200);
+  text-align: center;
+}
+
+.shortcuts-help-note {
+  font-size: var(--font-size-sm);
+  color: var(--color-gray-500);
+  margin: 0;
+}
+
+.shortcuts-help-note kbd {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  background: var(--color-gray-100);
+  color: var(--color-gray-700);
+  padding: 2px var(--spacing-1);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-gray-200);
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .shortcuts-help-modal {
+    width: 95vw;
+    max-width: none;
+  }
+  
+  .shortcuts-help-content {
+    max-height: 50vh;
+  }
+  
+  .shortcut-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-1);
+  }
+  
+  .shortcut-keys {
+    align-self: flex-end;
+  }
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .shortcut-item {
+    transition: none;
+  }
+}
+
+/* Focus styles */
+.shortcut-item:focus-within {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
