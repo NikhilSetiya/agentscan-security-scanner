@@ -1,0 +1,154 @@
+# Jaeger Helm Values
+fullnameOverride: "jaeger"
+
+# Jaeger strategy - use production for production environments
+strategy: production
+
+# Storage configuration
+storage:
+  type: elasticsearch
+  elasticsearch:
+    host: elasticsearch-master.monitoring.svc.cluster.local
+    port: 9200
+    scheme: http
+    user: ""
+    password: ""
+    nodesWanOnly: false
+    useAliases: false
+    createIndexTemplates: true
+    version: 7
+    maxSpanAge: 72h
+
+# Jaeger components configuration
+agent:
+  enabled: true
+  
+  # Resource configuration
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+  
+  # DaemonSet configuration
+  daemonset:
+    useHostNetwork: false
+    useHostPort: false
+
+collector:
+  enabled: true
+  replicaCount: 2
+  
+  # Resource configuration
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "200m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+  
+  # Service configuration
+  service:
+    type: ClusterIP
+    grpc:
+      port: 14250
+    http:
+      port: 14268
+    zipkin:
+      port: 9411
+  
+  # Sampling configuration
+  sampling:
+    strategies: |
+      {
+        "service_strategies": [
+          {
+            "service": "agentscan-api",
+            "type": "probabilistic",
+            "param": 0.1
+          },
+          {
+            "service": "agentscan-orchestrator",
+            "type": "probabilistic",
+            "param": 0.2
+          }
+        ],
+        "default_strategy": {
+          "type": "probabilistic",
+          "param": 0.01
+        }
+      }
+
+query:
+  enabled: true
+  replicaCount: 2
+  
+  # Resource configuration
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "300m"
+  
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 16686
+  
+  # Ingress configuration
+  ingress:
+    enabled: true
+    annotations:
+      kubernetes.io/ingress.class: nginx
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    hosts:
+      - host: jaeger.agentscan.dev
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: jaeger-tls
+        hosts:
+          - jaeger.agentscan.dev
+
+# Elasticsearch for Jaeger storage (if not using external)
+elasticsearch:
+  enabled: false  # Set to true if you want to deploy Elasticsearch with Jaeger
+
+# Schema job for Elasticsearch
+schema:
+  enabled: true
+  
+  # Resource configuration
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+
+# Spark dependencies job (for dependency analysis)
+spark:
+  enabled: false  # Enable for production environments with high trace volume
+
+# Hotrod example application (disable for production)
+hotrod:
+  enabled: false
+
+# Global configuration
+global:
+  # Image pull policy
+  imagePullPolicy: IfNotPresent
+  
+  # Security context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    fsGroup: 65534

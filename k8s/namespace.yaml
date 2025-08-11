@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agentscan
+  labels:
+    name: agentscan
+    app.kubernetes.io/name: agentscan
+    app.kubernetes.io/version: "1.0.0"

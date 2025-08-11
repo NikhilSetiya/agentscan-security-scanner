@@ -1,0 +1,279 @@
+# Prometheus Stack Helm Values
+fullnameOverride: "prometheus"
+
+# Prometheus configuration
+prometheus:
+  prometheusSpec:
+    retention: ${retention_days}d
+    retentionSize: "50GB"
+    
+    # Resource requests and limits
+    resources:
+      requests:
+        memory: "2Gi"
+        cpu: "1000m"
+      limits:
+        memory: "4Gi"
+        cpu: "2000m"
+    
+    # Storage configuration
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 100Gi
+    
+    # Additional scrape configs for AgentScan services
+    additionalScrapeConfigs:
+      - job_name: 'agentscan-api'
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - agentscan
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: agentscan-api
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: metrics
+      
+      - job_name: 'agentscan-orchestrator'
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - agentscan
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: agentscan-orchestrator
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: metrics
+    
+    # Rule files for AgentScan-specific alerts
+    ruleFiles:
+      - /etc/prometheus/rules/agentscan-rules.yaml
+    
+    # External labels
+    externalLabels:
+      cluster: ${cluster_name}
+      environment: ${environment}
+
+# Grafana configuration
+grafana:
+  enabled: true
+  
+  # Admin credentials
+  adminPassword: ${grafana_admin_password}
+  
+  # Resource configuration
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+  
+  # Persistence
+  persistence:
+    enabled: true
+    storageClassName: gp3
+    size: 10Gi
+  
+  # Grafana configuration
+  grafana.ini:
+    server:
+      root_url: "https://grafana.agentscan.dev"
+    security:
+      disable_gravatar: true
+    auth:
+      disable_login_form: false
+    auth.anonymous:
+      enabled: false
+    analytics:
+      reporting_enabled: false
+      check_for_updates: false
+    log:
+      mode: console
+      level: info
+  
+  # Data sources
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          url: http://prometheus-prometheus:9090
+          access: proxy
+          isDefault: true
+        - name: Jaeger
+          type: jaeger
+          url: http://jaeger-query:16686
+          access: proxy
+  
+  # Dashboard providers
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: 'agentscan'
+          orgId: 1
+          folder: 'AgentScan'
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/agentscan
+  
+  # Custom dashboards
+  dashboards:
+    agentscan:
+      agentscan-overview:
+        gnetId: 15757
+        revision: 1
+        datasource: Prometheus
+      
+      kubernetes-cluster:
+        gnetId: 7249
+        revision: 1
+        datasource: Prometheus
+      
+      postgresql:
+        gnetId: 9628
+        revision: 7
+        datasource: Prometheus
+      
+      redis:
+        gnetId: 763
+        revision: 4
+        datasource: Prometheus
+
+# Alertmanager configuration
+alertmanager:
+  alertmanagerSpec:
+    # Resource configuration
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "200m"
+    
+    # Storage
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+    
+    # Configuration
+    config:
+      global:
+        smtp_smarthost: 'localhost:587'
+        smtp_from: 'alerts@agentscan.dev'
+      
+      route:
+        group_by: ['alertname', 'cluster', 'service']
+        group_wait: 10s
+        group_interval: 10s
+        repeat_interval: 1h
+        receiver: 'web.hook'
+        routes:
+          - match:
+              alertname: Watchdog
+            receiver: 'null'
+          - match:
+              severity: critical
+            receiver: 'critical-alerts'
+          - match:
+              severity: warning
+            receiver: 'warning-alerts'
+      
+      receivers:
+        - name: 'null'
+        - name: 'web.hook'
+          webhook_configs:
+            - url: 'http://agentscan-api.agentscan.svc.cluster.local/webhooks/alerts'
+              send_resolved: true
+        - name: 'critical-alerts'
+          email_configs:
+            - to: 'critical-alerts@agentscan.dev'
+              subject: '[CRITICAL] AgentScan Alert - {{ .GroupLabels.alertname }}'
+              body: |
+                {{ range .Alerts }}
+                Alert: {{ .Annotations.summary }}
+                Description: {{ .Annotations.description }}
+                Labels: {{ range .Labels.SortedPairs }}{{ .Name }}={{ .Value }} {{ end }}
+                {{ end }}
+          slack_configs:
+            - api_url: 'YOUR_SLACK_WEBHOOK_URL'
+              channel: '#alerts-critical'
+              title: 'Critical Alert: {{ .GroupLabels.alertname }}'
+              text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        - name: 'warning-alerts'
+          email_configs:
+            - to: 'alerts@agentscan.dev'
+              subject: '[WARNING] AgentScan Alert - {{ .GroupLabels.alertname }}'
+
+# Node Exporter
+nodeExporter:
+  enabled: true
+
+# kube-state-metrics
+kubeStateMetrics:
+  enabled: true
+
+# Prometheus Operator
+prometheusOperator:
+  enabled: true
+  
+  # Resource configuration
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "200m"
+
+# Default rules
+defaultRules:
+  create: true
+  rules:
+    alertmanager: true
+    etcd: true
+    configReloaders: true
+    general: true
+    k8s: true
+    kubeApiserverAvailability: true
+    kubeApiserverBurnrate: true
+    kubeApiserverHistogram: true
+    kubeApiserverSlos: true
+    kubelet: true
+    kubeProxy: true
+    kubePrometheusGeneral: true
+    kubePrometheusNodeRecording: true
+    kubernetesApps: true
+    kubernetesResources: true
+    kubernetesStorage: true
+    kubernetesSystem: true
+    kubeScheduler: true
+    kubeStateMetrics: true
+    network: true
+    node: true
+    nodeExporterAlerting: true
+    nodeExporterRecording: true
+    prometheus: true
+    prometheusOperator: true
