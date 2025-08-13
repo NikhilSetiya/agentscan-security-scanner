@@ -12,6 +12,56 @@ vi.mock('react-router-dom', async () => {
   };
 });
 
+// Mock the API hooks
+vi.mock('../hooks/useApi', () => ({
+  useScanResults: vi.fn(() => ({
+    data: {
+      scan: {
+        id: 'test-scan-id',
+        repository: { name: 'frontend/web-app' },
+        branch: 'main',
+        commit: 'abc123def456',
+        status: 'completed',
+        started_at: '2024-01-01T10:00:00Z',
+        completed_at: '2024-01-01T10:05:00Z',
+        repository_id: 'repo-1',
+      },
+      findings: [
+        {
+          id: 'finding-1',
+          rule: 'XSS-001',
+          title: 'Cross-Site Scripting (XSS) vulnerability',
+          description: 'Potential XSS vulnerability detected',
+          severity: 'high',
+          file_path: 'src/components/UserProfile.tsx',
+          line_number: 42,
+          tool: 'eslint-security',
+          tools: ['eslint-security', 'semgrep'],
+          status: 'open',
+          confidence: 95,
+          code_snippet: 'const userInput = req.body.input;\nres.send(`<div>${userInput}</div>`);',
+          fix_suggestion: 'Use proper HTML escaping or a templating library that escapes by default.',
+        },
+      ],
+      statistics: {
+        total: 1,
+        by_severity: { high: 1, medium: 0, low: 0 },
+        by_status: { open: 1 },
+        by_tool: { 'eslint-security': 1 },
+      },
+    },
+    loading: false,
+    error: null,
+    execute: vi.fn(),
+  })),
+  useWebSocket: vi.fn(() => ({
+    isConnected: false,
+    connectionState: 'connecting',
+    lastMessage: null,
+    sendMessage: vi.fn(),
+  })),
+}));
+
 const ScanResultsWithRouter = () => (
   <BrowserRouter>
     <ScanResults />

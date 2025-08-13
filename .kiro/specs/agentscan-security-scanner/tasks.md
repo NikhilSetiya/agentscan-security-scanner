@@ -313,7 +313,7 @@
   - Test end-to-end secret scanning workflow through orchestrator
   - _Requirements: 6.4, 6.5_
 
-- [ ] 30.4 Implement web dashboard API integration
+- [x] 30.4 Implement web dashboard API integration
 
   - Create API service layer in React frontend to replace mock data
   - Connect Dashboard, ScanResults, and other components to real API endpoints
@@ -340,7 +340,7 @@
   - Add notification preferences and filtering in user settings
   - _Requirements: 4.4_
 
-- [ ] 30.7 Complete orchestrator database integration
+- [x] 30.7 Complete orchestrator database integration
 
   - Replace mock database with real database connection in orchestrator main.go
   - Initialize database adapter and pass to orchestration service

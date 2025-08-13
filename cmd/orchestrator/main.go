@@ -16,6 +16,7 @@ import (
 	"github.com/agentscan/agentscan/agents/sca/pip"
 	"github.com/agentscan/agentscan/agents/secrets/gitsecrets"
 	"github.com/agentscan/agentscan/agents/secrets/trufflehog"
+	"github.com/agentscan/agentscan/internal/database"
 	"github.com/agentscan/agentscan/internal/orchestrator"
 	"github.com/agentscan/agentscan/internal/queue"
 	"github.com/agentscan/agentscan/pkg/config"
@@ -35,6 +36,21 @@ func main() {
 	// Create context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Initialize database connection
+	db, err := database.New(&cfg.Database)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer db.Close()
+
+	// Initialize repositories
+	repos := database.NewRepositories(db)
+	
+	// Create repository adapter
+	dbAdapter := database.NewRepositoryAdapter(db, repos)
+
+	log.Printf("Database connection established successfully")
 
 	// Initialize Redis connection
 	redisClient, err := queue.NewRedisClient(&cfg.Redis)
@@ -58,18 +74,14 @@ func main() {
 		log.Fatalf("Failed to register agents: %v", err)
 	}
 
-	// TODO: Initialize database connection
-	// For now, we'll use a mock database in production you'd initialize a real DB
-	log.Println("Warning: Using mock database - implement real database connection")
-
 	// Initialize orchestration service
 	orchestratorConfig := orchestrator.DefaultConfig()
 	orchestratorConfig.MaxConcurrentScans = cfg.Agents.MaxConcurrent
 	orchestratorConfig.DefaultTimeout = cfg.Agents.DefaultTimeout
 	orchestratorConfig.WorkerCount = 5
 
-	// TODO: Pass real database instance
-	service := orchestrator.NewService(nil, jobQueue, agentManager, orchestratorConfig)
+	// Initialize orchestration service with real database
+	service := orchestrator.NewService(dbAdapter, jobQueue, agentManager, orchestratorConfig)
 
 	// Start the orchestration service
 	if err := service.Start(ctx); err != nil {

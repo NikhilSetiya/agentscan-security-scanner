@@ -14,9 +14,12 @@ import { GlobalShortcutsHelp } from './components/ui/KeyboardShortcutsHelp';
 import { useGlobalShortcuts } from './hooks/useKeyboardShortcuts';
 import { PageTransition } from './components/ui/Transitions';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { AuthProvider, ProtectedRoute, useAuth } from './contexts/AuthContext';
+import { LoginForm } from './components/auth/LoginForm';
 import './styles/globals.css';
 
-function App() {
+function AppContent() {
+  const { state } = useAuth();
   const { shortcuts } = useGlobalShortcuts();
   const {
     isOnboardingOpen,
@@ -24,33 +27,87 @@ function App() {
     closeOnboarding,
   } = useOnboarding();
 
+  // Show login form if not authenticated
+  if (!state.isAuthenticated && !state.isLoading) {
+    return <LoginForm />;
+  }
+
+  // Show loading while checking authentication
+  if (state.isLoading) {
+    return (
+      <div className="loading-container">
+        <div className="loading-spinner">Loading...</div>
+      </div>
+    );
+  }
+
+  return (
+    <Router>
+      <Layout>
+        <PageTransition>
+          <Routes>
+            <Route path="/" element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            } />
+            <Route path="/scans" element={
+              <ProtectedRoute>
+                <Scans />
+              </ProtectedRoute>
+            } />
+            <Route path="/scans/:id" element={
+              <ProtectedRoute>
+                <ScanResults />
+              </ProtectedRoute>
+            } />
+            <Route path="/findings" element={
+              <ProtectedRoute>
+                <Findings />
+              </ProtectedRoute>
+            } />
+            <Route path="/reports" element={
+              <ProtectedRoute>
+                <Reports />
+              </ProtectedRoute>
+            } />
+            <Route path="/security" element={
+              <ProtectedRoute>
+                <Security />
+              </ProtectedRoute>
+            } />
+            <Route path="/activity" element={
+              <ProtectedRoute>
+                <Activity />
+              </ProtectedRoute>
+            } />
+            <Route path="/settings" element={
+              <ProtectedRoute>
+                <Settings />
+              </ProtectedRoute>
+            } />
+          </Routes>
+        </PageTransition>
+      </Layout>
+      
+      {/* Global components */}
+      <OnboardingFlow
+        isOpen={isOnboardingOpen}
+        onClose={closeOnboarding}
+        onComplete={completeOnboarding}
+      />
+      
+      <GlobalShortcutsHelp shortcuts={shortcuts} />
+    </Router>
+  );
+}
+
+function App() {
   return (
     <ErrorBoundary>
-      <Router>
-        <Layout>
-          <PageTransition>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/scans" element={<Scans />} />
-              <Route path="/scans/:id" element={<ScanResults />} />
-              <Route path="/findings" element={<Findings />} />
-              <Route path="/reports" element={<Reports />} />
-              <Route path="/security" element={<Security />} />
-              <Route path="/activity" element={<Activity />} />
-              <Route path="/settings" element={<Settings />} />
-            </Routes>
-          </PageTransition>
-        </Layout>
-        
-        {/* Global components */}
-        <OnboardingFlow
-          isOpen={isOnboardingOpen}
-          onClose={closeOnboarding}
-          onComplete={completeOnboarding}
-        />
-        
-        <GlobalShortcutsHelp shortcuts={shortcuts} />
-      </Router>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
     </ErrorBoundary>
   );
 }

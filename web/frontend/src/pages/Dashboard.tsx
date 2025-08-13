@@ -5,6 +5,7 @@ import { Button } from '../components/ui/Button';
 import { LoadingSkeleton, StatCardSkeleton, TableSkeleton } from '../components/ui/LoadingSkeleton';
 import { NetworkError } from '../components/ui/ErrorState';
 import { FadeIn, StaggeredList, AnimateOnScroll } from '../components/ui/Transitions';
+import { useDashboardStats } from '../hooks/useApi';
 import { 
   Shield, 
   AlertTriangle, 
@@ -18,66 +19,36 @@ import {
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import './Dashboard.css';
 
-// Mock data for demonstration
-const scanStats = {
-  totalScans: 1247,
-  highSeverity: 23,
-  mediumSeverity: 156,
-  lowSeverity: 89,
+// Utility functions
+const calculateDuration = (startTime: string, endTime: string): string => {
+  const start = new Date(startTime);
+  const end = new Date(endTime);
+  const diffMs = end.getTime() - start.getTime();
+  const diffSecs = Math.floor(diffMs / 1000);
+  const diffMins = Math.floor(diffSecs / 60);
+  
+  if (diffMins > 0) {
+    const remainingSecs = diffSecs % 60;
+    return `${diffMins}m ${remainingSecs}s`;
+  }
+  return `${diffSecs}s`;
 };
 
-const recentScans = [
-  {
-    id: '1',
-    repository: 'frontend/web-app',
-    status: 'completed',
-    findings: { high: 2, medium: 8, low: 3 },
-    duration: '2m 34s',
-    timestamp: '2 minutes ago',
-  },
-  {
-    id: '2',
-    repository: 'backend/api-service',
-    status: 'running',
-    findings: null,
-    duration: null,
-    timestamp: 'Started 5 minutes ago',
-  },
-  {
-    id: '3',
-    repository: 'mobile/ios-app',
-    status: 'completed',
-    findings: { high: 0, medium: 4, low: 12 },
-    duration: '1m 45s',
-    timestamp: '1 hour ago',
-  },
-  {
-    id: '4',
-    repository: 'infrastructure/terraform',
-    status: 'failed',
-    findings: null,
-    duration: null,
-    timestamp: '2 hours ago',
-  },
-  {
-    id: '5',
-    repository: 'docs/documentation',
-    status: 'completed',
-    findings: { high: 0, medium: 0, low: 1 },
-    duration: '45s',
-    timestamp: '3 hours ago',
-  },
-];
-
-const trendData = [
-  { date: '2024-01-01', high: 15, medium: 45, low: 23 },
-  { date: '2024-01-02', high: 12, medium: 38, low: 28 },
-  { date: '2024-01-03', high: 18, medium: 52, low: 31 },
-  { date: '2024-01-04', high: 8, medium: 29, low: 19 },
-  { date: '2024-01-05', high: 23, medium: 67, low: 42 },
-  { date: '2024-01-06', high: 16, medium: 43, low: 35 },
-  { date: '2024-01-07', high: 11, medium: 31, low: 24 },
-];
+const formatTimestamp = (timestamp: string): string => {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins} minute${diffMins !== 1 ? 's' : ''} ago`;
+  if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+  if (diffDays < 7) return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+  
+  return date.toLocaleDateString();
+};
 
 const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
   const getStatusConfig = (status: string) => {
@@ -110,72 +81,48 @@ const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
   );
 };
 
-const FindingsSummary: React.FC<{ findings: { high: number; medium: number; low: number } | null }> = ({ findings }) => {
-  if (!findings) return <span className="text-gray-400">-</span>;
+const FindingsSummary: React.FC<{ scan: any }> = ({ scan }) => {
+  if (scan.status === 'running') {
+    return <span className="text-gray-400">Running...</span>;
+  }
+  
+  if (scan.status === 'failed') {
+    return <span className="text-gray-400">Failed</span>;
+  }
 
+  const findingsCount = scan.findings_count || 0;
+  
+  if (findingsCount === 0) {
+    return <span className="finding-count finding-clean">Clean</span>;
+  }
+
+  // For now, show total findings count since we don't have severity breakdown in the scan object
   return (
     <div className="findings-summary">
-      {findings.high > 0 && (
-        <span className="finding-count finding-high">
-          {findings.high} High
-        </span>
-      )}
-      {findings.medium > 0 && (
-        <span className="finding-count finding-medium">
-          {findings.medium} Med
-        </span>
-      )}
-      {findings.low > 0 && (
-        <span className="finding-count finding-low">
-          {findings.low} Low
-        </span>
-      )}
-      {findings.high === 0 && findings.medium === 0 && findings.low === 0 && (
-        <span className="finding-count finding-clean">Clean</span>
-      )}
+      <span className="finding-count finding-total">
+        {findingsCount} Finding{findingsCount !== 1 ? 's' : ''}
+      </span>
     </div>
   );
 };
 
 export const Dashboard: React.FC = () => {
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: dashboardData, loading: isLoading, error, execute: refetchData } = useDashboardStats();
   const [isRefreshing, setIsRefreshing] = useState(false);
-
-  // Simulate data loading
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        setIsLoading(false);
-      } catch (err) {
-        setError('Failed to load dashboard data');
-        setIsLoading(false);
-      }
-    };
-
-    loadData();
-  }, []);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      // Simulate refresh
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      setError(null);
-    } catch (err) {
-      setError('Failed to refresh data');
+      await refetchData();
     } finally {
       setIsRefreshing(false);
     }
   };
 
   const handleNewScan = () => {
-    // Dispatch custom event for new scan
-    document.dispatchEvent(new CustomEvent('new-scan'));
+    // For demo purposes, show a simple alert
+    // In a real app, this would open a modal to select repository and scan options
+    alert('New scan functionality would open a repository selection modal');
   };
 
   // Listen for global refresh event
@@ -185,10 +132,28 @@ export const Dashboard: React.FC = () => {
     return () => document.removeEventListener('refresh-data', handleGlobalRefresh);
   }, []);
 
+  // Extract data with fallbacks for when API data is not available
+  const scanStats = dashboardData ? {
+    totalScans: dashboardData.total_scans,
+    highSeverity: dashboardData.findings_by_severity.high,
+    mediumSeverity: dashboardData.findings_by_severity.medium,
+    lowSeverity: dashboardData.findings_by_severity.low,
+  } : {
+    totalScans: 0,
+    highSeverity: 0,
+    mediumSeverity: 0,
+    lowSeverity: 0,
+  };
+
+  const recentScans = dashboardData?.recent_scans || [];
+  const trendData = dashboardData?.trend_data || [];
+
   if (error && !isLoading) {
     return (
       <div className="dashboard">
-        <NetworkError onRetry={handleRefresh} />
+        <NetworkError 
+          onRetry={handleRefresh}
+        />
       </div>
     );
   }
@@ -341,21 +306,26 @@ export const Dashboard: React.FC = () => {
                       className={`animate-fade-in stagger-${Math.min(index + 1, 5)}`}
                     >
                       <TableCell>
-                        <div className="repository-name">{scan.repository}</div>
+                        <div className="repository-name">
+                          {scan.repository?.name || `Repository ${scan.repository_id}`}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <StatusBadge status={scan.status} />
                       </TableCell>
                       <TableCell>
-                        <FindingsSummary findings={scan.findings} />
+                        <FindingsSummary scan={scan} />
                       </TableCell>
                       <TableCell>
                         <span className="duration">
-                          {scan.duration || '-'}
+                          {scan.duration || (scan.completed_at && scan.started_at ? 
+                            calculateDuration(scan.started_at, scan.completed_at) : '-')}
                         </span>
                       </TableCell>
                       <TableCell>
-                        <span className="timestamp">{scan.timestamp}</span>
+                        <span className="timestamp">
+                          {formatTimestamp(scan.started_at)}
+                        </span>
                       </TableCell>
                     </TableRow>
                   ))}

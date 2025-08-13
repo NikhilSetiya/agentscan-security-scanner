@@ -1,8 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/Table';
 import { Button } from '../components/ui/Button';
+import { LoadingSkeleton } from '../components/ui/LoadingSkeleton';
+import { NetworkError } from '../components/ui/ErrorState';
+import { useScanResults, useWebSocket } from '../hooks/useApi';
 import { 
   ArrowLeft,
   GitBranch,
@@ -10,7 +13,6 @@ import {
   Clock,
   CheckCircle,
   AlertTriangle,
-
   Download,
   Search,
   ChevronDown,
@@ -20,104 +22,21 @@ import {
 } from 'lucide-react';
 import './ScanResults.css';
 
-// Mock data for demonstration
-const mockScanData = {
-  id: '123e4567-e89b-12d3-a456-426614174000',
-  repository: 'frontend/web-app',
-  branch: 'main',
-  commit: 'abc123def456',
-  commitMessage: 'Add user authentication flow',
-  status: 'completed',
-  startedAt: '2024-01-07T10:30:00Z',
-  completedAt: '2024-01-07T10:32:34Z',
-  duration: '2m 34s',
-  triggeredBy: 'John Doe',
-  scanType: 'full',
+// Utility functions
+const calculateDuration = (startTime: string, endTime?: string): string => {
+  if (!endTime) return '-';
+  const start = new Date(startTime);
+  const end = new Date(endTime);
+  const diffMs = end.getTime() - start.getTime();
+  const diffSecs = Math.floor(diffMs / 1000);
+  const diffMins = Math.floor(diffSecs / 60);
+  
+  if (diffMins > 0) {
+    const remainingSecs = diffSecs % 60;
+    return `${diffMins}m ${remainingSecs}s`;
+  }
+  return `${diffSecs}s`;
 };
-
-const mockFindings = [
-  {
-    id: '1',
-    severity: 'high',
-    rule: 'XSS-001',
-    title: 'Cross-Site Scripting (XSS) vulnerability',
-    description: 'User input is not properly sanitized before being rendered in the DOM',
-    file: 'src/components/UserProfile.tsx',
-    line: 42,
-    column: 15,
-    tools: ['semgrep', 'eslint', 'bandit'],
-    confidence: 0.95,
-    status: 'open',
-    codeSnippet: `const userBio = props.user.bio;
-return <div dangerouslySetInnerHTML={{__html: userBio}} />;`,
-    fixSuggestion: 'Use proper HTML sanitization or escape user input before rendering',
-  },
-  {
-    id: '2',
-    severity: 'medium',
-    rule: 'SQL-002',
-    title: 'SQL Injection vulnerability',
-    description: 'Database query constructed using string concatenation',
-    file: 'src/api/users.ts',
-    line: 15,
-    column: 8,
-    tools: ['semgrep', 'eslint'],
-    confidence: 0.87,
-    status: 'open',
-    codeSnippet: `const query = "SELECT * FROM users WHERE id = " + userId;
-const result = await db.query(query);`,
-    fixSuggestion: 'Use parameterized queries or prepared statements',
-  },
-  {
-    id: '3',
-    severity: 'low',
-    rule: 'CRYPTO-003',
-    title: 'Weak cryptographic algorithm',
-    description: 'MD5 hash function is cryptographically weak',
-    file: 'src/utils/hash.ts',
-    line: 8,
-    column: 20,
-    tools: ['semgrep'],
-    confidence: 0.72,
-    status: 'ignored',
-    codeSnippet: `import crypto from 'crypto';
-const hash = crypto.createHash('md5').update(data).digest('hex');`,
-    fixSuggestion: 'Use SHA-256 or other secure hash functions',
-  },
-  {
-    id: '4',
-    severity: 'high',
-    rule: 'AUTH-004',
-    title: 'Hardcoded API key',
-    description: 'API key found in source code',
-    file: 'src/config/api.ts',
-    line: 3,
-    column: 1,
-    tools: ['trufflehog', 'git-secrets'],
-    confidence: 0.98,
-    status: 'open',
-    codeSnippet: `const API_KEY = "sk-1234567890abcdef";
-const config = { apiKey: API_KEY };`,
-    fixSuggestion: 'Move API keys to environment variables',
-  },
-  {
-    id: '5',
-    severity: 'medium',
-    rule: 'DEPS-005',
-    title: 'Vulnerable dependency',
-    description: 'Package lodash@4.17.20 has known security vulnerabilities',
-    file: 'package.json',
-    line: 25,
-    column: 5,
-    tools: ['npm-audit'],
-    confidence: 1.0,
-    status: 'open',
-    codeSnippet: `"dependencies": {
-  "lodash": "4.17.20"
-}`,
-    fixSuggestion: 'Update to lodash@4.17.21 or later',
-  },
-];
 
 type SeverityFilter = 'all' | 'high' | 'medium' | 'low';
 type StatusFilter = 'all' | 'open' | 'ignored' | 'fixed';
@@ -183,12 +102,14 @@ const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
   );
 };
 
-const ToolsList: React.FC<{ tools: string[]; totalTools?: number }> = ({ tools, totalTools = 5 }) => {
+const ToolsList: React.FC<{ finding: any; totalTools?: number }> = ({ finding, totalTools = 5 }) => {
+  const tools = finding.tools || [finding.tool].filter(Boolean);
+  
   return (
     <div className="tools-list">
       <span className="tools-count">{tools.length}/{totalTools}</span>
       <div className="tools-names">
-        {tools.map((tool, index) => (
+        {tools.map((tool: string, index: number) => (
           <span key={tool} className="tool-name">
             {tool}
             {index < tools.length - 1 && ', '}
@@ -200,7 +121,7 @@ const ToolsList: React.FC<{ tools: string[]; totalTools?: number }> = ({ tools, 
 };
 
 const FindingRow: React.FC<{ 
-  finding: typeof mockFindings[0]; 
+  finding: any; 
   onToggleDetails: (id: string) => void; 
   showDetails: boolean;
 }> = ({ finding, onToggleDetails, showDetails }) => {
@@ -218,12 +139,12 @@ const FindingRow: React.FC<{
         </TableCell>
         <TableCell>
           <div className="file-location">
-            <span className="file-path">{finding.file}</span>
-            <span className="line-number">:{finding.line}</span>
+            <span className="file-path">{finding.file_path}</span>
+            <span className="line-number">:{finding.line_number}</span>
           </div>
         </TableCell>
         <TableCell>
-          <ToolsList tools={finding.tools} />
+          <ToolsList finding={finding} />
         </TableCell>
         <TableCell>
           <StatusBadge status={finding.status} />
@@ -249,15 +170,19 @@ const FindingRow: React.FC<{
                 <p>{finding.description}</p>
               </div>
               
-              <div className="code-snippet">
-                <h4>Code Snippet</h4>
-                <pre><code>{finding.codeSnippet}</code></pre>
-              </div>
+              {finding.code_snippet && (
+                <div className="code-snippet">
+                  <h4>Code Snippet</h4>
+                  <pre><code>{finding.code_snippet}</code></pre>
+                </div>
+              )}
               
-              <div className="fix-suggestion">
-                <h4>Suggested Fix</h4>
-                <p>{finding.fixSuggestion}</p>
-              </div>
+              {finding.fix_suggestion && (
+                <div className="fix-suggestion">
+                  <h4>Suggested Fix</h4>
+                  <p>{finding.fix_suggestion}</p>
+                </div>
+              )}
               
               <div className="finding-actions">
                 <Button variant="primary" size="sm">
@@ -281,27 +206,19 @@ const FindingRow: React.FC<{
 
 export const ScanResults: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const [findings] = useState(mockFindings);
+  const { data: scanResults, loading, error, execute: refetchResults } = useScanResults(id);
+  const { isConnected } = useWebSocket(`ws://localhost:8080/ws/scans/${id}`, !!id);
   
-  // Use the id parameter (in a real app, this would fetch scan data)
-  console.log('Scan ID:', id);
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [sortField, setSortField] = useState<SortField>('severity');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedFindings, setExpandedFindings] = useState<Set<string>>(new Set());
-  const [isConnected, setIsConnected] = useState(false);
 
-  // Mock WebSocket connection for real-time updates
-  useEffect(() => {
-    // Simulate WebSocket connection
-    const timer = setTimeout(() => {
-      setIsConnected(true);
-    }, 1000);
-
-    return () => clearTimeout(timer);
-  }, []);
+  // Extract data with fallbacks
+  const scanData = scanResults?.scan;
+  const findings = scanResults?.findings || [];
 
   const handleToggleDetails = (findingId: string) => {
     const newExpanded = new Set(expandedFindings);
@@ -334,8 +251,8 @@ export const ScanResults: React.FC = () => {
       if (severityFilter !== 'all' && finding.severity !== severityFilter) return false;
       if (statusFilter !== 'all' && finding.status !== statusFilter) return false;
       if (searchQuery && !finding.title.toLowerCase().includes(searchQuery.toLowerCase()) &&
-          !finding.file.toLowerCase().includes(searchQuery.toLowerCase()) &&
-          !finding.rule.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+          !finding.file_path.toLowerCase().includes(searchQuery.toLowerCase()) &&
+          !finding.rule_id.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       return true;
     })
     .sort((a, b) => {
@@ -344,21 +261,21 @@ export const ScanResults: React.FC = () => {
 
       switch (sortField) {
         case 'severity':
-          const severityOrder = { high: 3, medium: 2, low: 1 };
-          aValue = severityOrder[a.severity as keyof typeof severityOrder];
-          bValue = severityOrder[b.severity as keyof typeof severityOrder];
+          const severityOrder = { critical: 5, high: 4, medium: 3, low: 2, info: 1 };
+          aValue = severityOrder[a.severity as keyof typeof severityOrder] || 0;
+          bValue = severityOrder[b.severity as keyof typeof severityOrder] || 0;
           break;
         case 'file':
-          aValue = a.file;
-          bValue = b.file;
+          aValue = a.file_path;
+          bValue = b.file_path;
           break;
         case 'line':
-          aValue = a.line;
-          bValue = b.line;
+          aValue = a.line_number;
+          bValue = b.line_number;
           break;
         case 'rule':
-          aValue = a.rule;
-          bValue = b.rule;
+          aValue = a.rule_id;
+          bValue = b.rule_id;
           break;
         default:
           return 0;
@@ -371,13 +288,92 @@ export const ScanResults: React.FC = () => {
       }
     });
 
-  const findingStats = {
+  const findingStats = scanResults?.statistics || {
     total: findings.length,
-    high: findings.filter(f => f.severity === 'high').length,
-    medium: findings.filter(f => f.severity === 'medium').length,
-    low: findings.filter(f => f.severity === 'low').length,
-    open: findings.filter(f => f.status === 'open').length,
+    by_severity: {
+      critical: findings.filter(f => f.severity === 'critical').length,
+      high: findings.filter(f => f.severity === 'high').length,
+      medium: findings.filter(f => f.severity === 'medium').length,
+      low: findings.filter(f => f.severity === 'low').length,
+      info: findings.filter(f => f.severity === 'info').length,
+    },
+    by_status: {
+      open: findings.filter(f => f.status === 'open').length,
+    },
+    by_tool: {},
   };
+
+  if (loading) {
+    return (
+      <div className="scan-results">
+        <div className="scan-header">
+          <div className="header-navigation">
+            <Link to="/scans" className="back-link">
+              <ArrowLeft size={16} />
+              Back to Scans
+            </Link>
+          </div>
+          <Card>
+            <CardContent>
+              <LoadingSkeleton height={120} />
+            </CardContent>
+          </Card>
+        </div>
+        <Card>
+          <CardContent>
+            <LoadingSkeleton height={60} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent>
+            <LoadingSkeleton height={400} />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="scan-results">
+        <div className="scan-header">
+          <div className="header-navigation">
+            <Link to="/scans" className="back-link">
+              <ArrowLeft size={16} />
+              Back to Scans
+            </Link>
+          </div>
+        </div>
+        <NetworkError 
+          onRetry={refetchResults}
+        />
+      </div>
+    );
+  }
+
+  if (!scanData) {
+    return (
+      <div className="scan-results">
+        <div className="scan-header">
+          <div className="header-navigation">
+            <Link to="/scans" className="back-link">
+              <ArrowLeft size={16} />
+              Back to Scans
+            </Link>
+          </div>
+        </div>
+        <Card>
+          <CardContent>
+            <div className="empty-state">
+              <AlertTriangle size={48} />
+              <h3>Scan not found</h3>
+              <p>The requested scan could not be found.</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="scan-results">
@@ -394,23 +390,27 @@ export const ScanResults: React.FC = () => {
           <CardContent>
             <div className="scan-info">
               <div className="scan-basic-info">
-                <h1 className="scan-title">{mockScanData.repository}</h1>
+                <h1 className="scan-title">
+                  {scanData.repository?.name || `Repository ${scanData.repository_id}`}
+                </h1>
                 <div className="scan-meta">
                   <div className="meta-item">
                     <GitBranch size={16} />
-                    <span>{mockScanData.branch}</span>
+                    <span>{scanData.branch}</span>
                   </div>
                   <div className="meta-item">
                     <GitCommit size={16} />
-                    <span>{mockScanData.commit}</span>
+                    <span>{scanData.commit}</span>
                   </div>
                   <div className="meta-item">
                     <Clock size={16} />
-                    <span>{mockScanData.duration}</span>
+                    <span>{calculateDuration(scanData.started_at, scanData.completed_at)}</span>
                   </div>
                   <div className="meta-item">
                     <CheckCircle size={16} />
-                    <span className="status-completed">Completed</span>
+                    <span className={`status-${scanData.status}`}>
+                      {scanData.status.charAt(0).toUpperCase() + scanData.status.slice(1)}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -421,15 +421,15 @@ export const ScanResults: React.FC = () => {
                   <span className="stat-label">Total Findings</span>
                 </div>
                 <div className="stat-item stat-high">
-                  <span className="stat-value">{findingStats.high}</span>
+                  <span className="stat-value">{findingStats.by_severity?.high || 0}</span>
                   <span className="stat-label">High</span>
                 </div>
                 <div className="stat-item stat-medium">
-                  <span className="stat-value">{findingStats.medium}</span>
+                  <span className="stat-value">{findingStats.by_severity?.medium || 0}</span>
                   <span className="stat-label">Medium</span>
                 </div>
                 <div className="stat-item stat-low">
-                  <span className="stat-value">{findingStats.low}</span>
+                  <span className="stat-value">{findingStats.by_severity?.low || 0}</span>
                   <span className="stat-label">Low</span>
                 </div>
               </div>
