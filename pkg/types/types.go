@@ -165,3 +165,93 @@ const (
 	RoleAdmin  = "admin"
 	RoleMember = "member"
 )
+
+// ScanStatus represents the status of a scan
+type ScanStatus string
+
+const (
+	ScanStatusQueued    ScanStatus = "queued"
+	ScanStatusRunning   ScanStatus = "running"
+	ScanStatusCompleted ScanStatus = "completed"
+	ScanStatusFailed    ScanStatus = "failed"
+	ScanStatusCancelled ScanStatus = "cancelled"
+)
+
+// Severity levels
+type Severity string
+
+const (
+	SeverityLow    Severity = "low"
+	SeverityMedium Severity = "medium"
+	SeverityHigh   Severity = "high"
+)
+
+// VulnCategory represents vulnerability categories
+type VulnCategory string
+
+const (
+	CategorySecurity     VulnCategory = "security"
+	CategoryPerformance  VulnCategory = "performance"
+	CategoryMaintenance  VulnCategory = "maintenance"
+	CategoryCompliance   VulnCategory = "compliance"
+)
+
+// ScanConfig represents configuration for a scan
+type ScanConfig struct {
+	RepoURL     string            `json:"repo_url"`
+	Branch      string            `json:"branch"`
+	Commit      string            `json:"commit"`
+	Languages   []string          `json:"languages"`
+	Files       []string          `json:"files,omitempty"`
+	Rules       []string          `json:"rules,omitempty"`
+	Options     map[string]string `json:"options,omitempty"`
+	Timeout     time.Duration     `json:"timeout"`
+}
+
+// AgentConfig represents agent configuration
+type AgentConfig struct {
+	Name        string   `json:"name"`
+	Version     string   `json:"version"`
+	Description string   `json:"description"`
+	Languages   []string `json:"languages"`
+	Categories  []string `json:"categories"`
+}
+
+// VersionInfo represents version information
+type VersionInfo struct {
+	Agent   string    `json:"agent"`
+	Tool    string    `json:"tool"`
+	Updated time.Time `json:"updated"`
+}
+
+// Metadata represents scan metadata
+type Metadata map[string]interface{}
+
+// FixSuggestion represents a suggested fix for a finding
+type FixSuggestion struct {
+	Description string `json:"description"`
+	Code        string `json:"code,omitempty"`
+	File        string `json:"file,omitempty"`
+	Line        int    `json:"line,omitempty"`
+}
+
+// ScanRequest represents a request to start a scan
+type ScanRequest struct {
+	RepoURL      string            `json:"repo_url"`
+	Branch       string            `json:"branch"`
+	Commit       string            `json:"commit"`
+	Incremental  bool              `json:"incremental"`
+	Priority     Priority          `json:"priority"`
+	Agents       []string          `json:"agents,omitempty"`
+	Options      map[string]string `json:"options,omitempty"`
+	CallbackURL  string            `json:"callback_url,omitempty"`
+}
+
+// Priority represents scan priority
+type Priority int
+
+const (
+	PriorityLowValue    Priority = 1
+	PriorityMediumValue Priority = 5
+	PriorityHighValue   Priority = 10
+)

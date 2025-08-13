@@ -152,3 +152,33 @@ func GetType(err error) ErrorType {
 	}
 	return ErrorTypeInternal
 }
+
+// IsNotFound checks if the error is a not found error
+func IsNotFound(err error) bool {
+	return IsType(err, ErrorTypeNotFound)
+}
+
+// IsValidation checks if the error is a validation error
+func IsValidation(err error) bool {
+	return IsType(err, ErrorTypeValidation)
+}
+
+// IsAuthentication checks if the error is an authentication error
+func IsAuthentication(err error) bool {
+	return IsType(err, ErrorTypeAuthentication)
+}
+
+// IsAuthorization checks if the error is an authorization error
+func IsAuthorization(err error) bool {
+	return IsType(err, ErrorTypeAuthorization)
+}
+
+// IsTimeout checks if the error is a timeout error
+func IsTimeout(err error) bool {
+	return IsType(err, ErrorTypeTimeout)
+}
+
+// IsRateLimit checks if the error is a rate limit error
+func IsRateLimit(err error) bool {
+	return IsType(err, ErrorTypeRateLimit)
+}
