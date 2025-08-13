@@ -47,7 +47,6 @@ function App() {
           isOpen={isOnboardingOpen}
           onClose={closeOnboarding}
           onComplete={completeOnboarding}
-          steps={[]} // Use default steps
         />
         
         <GlobalShortcutsHelp shortcuts={shortcuts} />

@@ -17,7 +17,7 @@ export interface OnboardingFlowProps {
   isOpen: boolean;
   onClose: () => void;
   onComplete: () => void;
-  steps: OnboardingStep[];
+  steps?: OnboardingStep[];
   showProgress?: boolean;
 }
 
