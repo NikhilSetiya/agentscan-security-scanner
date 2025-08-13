@@ -305,7 +305,7 @@
   - Test end-to-end JavaScript/TypeScript scanning workflow through orchestrator
   - _Requirements: 1.1, 2.1, 2.5_
 
-- [-] 30.3 Complete secret scanning agent registration
+- [x] 30.3 Complete secret scanning agent registration
 
   - Register TruffleHog and git-secrets agents in orchestrator main.go
   - Add secret scanning agent imports and registration in registerAgents function
