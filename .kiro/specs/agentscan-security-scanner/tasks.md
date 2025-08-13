@@ -365,3 +365,58 @@
   - Validate security requirements and compliance standards
   - Complete final documentation and deployment preparation
   - _Requirements: All requirements final validation_
+
+## Critical Developer Experience Enhancements (Last Mile to User Adoption)
+
+- [x] 32. Enhance GitHub PR integration for seamless developer workflow
+
+  - Improve PR comment formatting with clear finding summaries and actionable insights
+  - Add GitHub status checks that prevent merging when high-severity issues are found
+  - Implement smart PR comment updates that replace outdated results instead of creating multiple comments
+  - Add "View detailed results" links that direct to AgentScan dashboard with PR context
+  - Create PR-specific incremental scanning that only analyzes changed files
+  - Write integration tests with real GitHub repositories and PR workflows
+  - _Requirements: Enhanced developer workflow integration_
+
+- [ ] 33. Implement basic DAST scanning capabilities
+
+  - Create DAST agent using OWASP ZAP baseline scan for web application vulnerability detection
+  - Add web application detection logic (analyze package.json, requirements.txt, Dockerfile for web frameworks)
+  - Implement Docker-in-Docker container management for spinning up applications during scanning
+  - Add timeout handling (10 minutes max) and graceful degradation when DAST fails
+  - Integrate DAST findings with existing consensus engine and reporting systems
+  - Register DAST agent in orchestrator alongside existing SAST/SCA/secrets agents
+  - Write unit tests for DAST agent with mock containerized applications
+  - _Requirements: Dynamic analysis capabilities for runtime vulnerability detection_
+
+- [ ] 34. Build enhanced VS Code extension with real-time developer feedback
+
+  - Improve file-level scanning with sub-2-second response times and better caching
+  - Add rich hover tooltips with vulnerability details, confidence scores, and fix suggestions
+  - Implement code actions for quick fixes (suppress finding, ignore rule, learn more)
+  - Create status bar integration showing scan progress and overall security health
+  - Add keyboard shortcuts for common actions (trigger scan, navigate findings, etc.)
+  - Improve WebSocket connection resilience with automatic reconnection and offline mode
+  - Package extension for VS Code Marketplace with proper telemetry and crash reporting
+  - _Requirements: Real-time developer feedback in IDE environment_
+
+- [ ] 35. Create hands-off deployment and beta user onboarding system
+
+  - Set up DigitalOcean App Platform deployment with auto-scaling and blue-green deployments
+  - Create automated GitHub repository onboarding with one-click setup
+  - Build GitHub Marketplace Action with simple workflow templates
+  - Implement automated user invitation system for beta program
+  - Add conversion funnel tracking and usage analytics for feature adoption measurement
+  - Create self-service demo environment with pre-loaded vulnerable code samples
+  - Write deployment automation scripts and monitoring/alerting setup
+  - _Requirements: Zero-friction user acquisition and production deployment_
+
+- [ ] 36. Implement GitHub Marketplace integration and viral growth mechanics
+  - Create GitHub Action manifest with proper branding and clear usage documentation
+  - Build Docker container optimized for GitHub Actions runtime environment
+  - Add "Secured by AgentScan" badges to scan results for organic growth
+  - Implement freemium model with public repo scanning and watermarked results
+  - Create automated PR creation system for popular repositories to drive adoption
+  - Add comprehensive error handling and troubleshooting guidance for GitHub Action
+  - Write end-to-end tests for complete GitHub Marketplace workflow
+  - _Requirements: Viral growth mechanics and marketplace distribution_

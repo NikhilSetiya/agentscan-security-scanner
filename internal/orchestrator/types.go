@@ -13,9 +13,11 @@ type ScanRequest struct {
 	RepoURL      string                 `json:"repo_url"`
 	Branch       string                 `json:"branch"`
 	CommitSHA    string                 `json:"commit_sha"`
-	ScanType     string                 `json:"scan_type"` // full, incremental, ide
-	Priority     int                    `json:"priority"`  // 1-10, higher = more priority
-	Agents       []string               `json:"agents"`    // List of agent names to run
+	BaseSHA      string                 `json:"base_sha,omitempty"`      // For PR scans - base commit to compare against
+	ChangedFiles []string               `json:"changed_files,omitempty"` // For incremental scans - specific files to scan
+	ScanType     string                 `json:"scan_type"`               // full, incremental, ide
+	Priority     int                    `json:"priority"`                // 1-10, higher = more priority
+	Agents       []string               `json:"agents"`                  // List of agent names to run
 	Options      map[string]interface{} `json:"options,omitempty"`
 	Timeout      time.Duration          `json:"timeout,omitempty"`
 	CallbackURL  string                 `json:"callback_url,omitempty"`
@@ -79,6 +81,7 @@ type Finding struct {
 	Status        string                 `json:"status"`
 	FixSuggestion map[string]interface{} `json:"fix_suggestion,omitempty"`
 	References    []string               `json:"references,omitempty"`
+	Metadata      map[string]interface{} `json:"metadata,omitempty"` // Additional metadata like is_new_in_pr
 	CreatedAt     time.Time              `json:"created_at"`
 	UpdatedAt     time.Time              `json:"updated_at"`
 }

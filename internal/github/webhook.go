@@ -158,19 +158,39 @@ func (h *WebhookHandler) handlePullRequestEvent(ctx context.Context, payload []b
 		return nil
 	}
 
-	// Submit scan job
+	// Get changed files for PR-specific scanning
+	client, err := h.service.GetClientForInstallation(ctx, event.Installation.ID)
+	if err != nil {
+		fmt.Printf("Failed to get GitHub client for changed files: %v\n", err)
+		// Continue without changed files - will do full scan
+	}
+
+	var changedFiles []string
+	if client != nil {
+		changedFiles, err = h.getPRChangedFiles(ctx, client, event.Repository.Owner.Login, event.Repository.Name, event.PullRequest.Number)
+		if err != nil {
+			fmt.Printf("Failed to get PR changed files: %v\n", err)
+			// Continue without changed files - will do full scan
+		}
+	}
+
+	// Submit scan job with PR-specific options
 	scanReq := &orchestrator.ScanRequest{
 		RepositoryID: repo.ID,
 		RepoURL:      event.Repository.CloneURL,
 		Branch:       event.PullRequest.Head.Ref,
 		CommitSHA:    event.PullRequest.Head.SHA,
+		BaseSHA:      event.PullRequest.Base.SHA, // Add base SHA for comparison
 		ScanType:     "incremental", // Use incremental for PR updates
 		Priority:     types.PriorityHigh,     // PR scans are high priority
+		ChangedFiles: changedFiles,   // Only scan changed files
 		Options: map[string]interface{}{
 			"github_pr_number":      strconv.Itoa(event.PullRequest.Number),
 			"github_installation_id": strconv.FormatInt(event.Installation.ID, 10),
 			"github_repo_owner":     event.Repository.Owner.Login,
 			"github_repo_name":      event.Repository.Name,
+			"is_pr_scan":           "true",
+			"pr_base_sha":          event.PullRequest.Base.SHA,
 		},
 	}
 
@@ -329,6 +349,24 @@ func (h *WebhookHandler) getRepositoryByProviderID(ctx context.Context, provider
 	}, nil
 }
 
+// getPRChangedFiles gets the list of files changed in a pull request
+func (h *WebhookHandler) getPRChangedFiles(ctx context.Context, client *Client, owner, repo string, prNumber int) ([]string, error) {
+	files, err := client.GetPRFiles(ctx, owner, repo, prNumber)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get PR files: %w", err)
+	}
+
+	var changedFiles []string
+	for _, file := range files {
+		// Only include files that are added or modified (not deleted)
+		if file.Status == "added" || file.Status == "modified" || file.Status == "renamed" {
+			changedFiles = append(changedFiles, file.Filename)
+		}
+	}
+
+	return changedFiles, nil
+}
+
 // OnScanComplete is called when a scan completes to update GitHub status
 func (h *WebhookHandler) OnScanComplete(ctx context.Context, job *types.ScanJob, results *orchestrator.ScanResults) error {
 	// Check if this is a GitHub PR scan
@@ -390,7 +428,7 @@ func (h *WebhookHandler) OnScanComplete(ctx context.Context, job *types.ScanJob,
 		return fmt.Errorf("invalid PR number: %w", err)
 	}
 
-	if err := h.postPRComment(ctx, client, repoOwnerStr, repoNameStr, prNum, results); err != nil {
+	if err := h.postPRComment(ctx, client, repoOwnerStr, repoNameStr, prNum, results, job.ID.String()); err != nil {
 		fmt.Printf("Failed to post PR comment: %v\n", err)
 	}
 
@@ -402,31 +440,51 @@ func (h *WebhookHandler) updateStatusCheck(ctx context.Context, client *Client, 
 	var state, description string
 	
 	if results.Status == "completed" {
-		highSeverityCount := 0
+		// Count findings by severity
+		severityCounts := make(map[string]int)
+		newFindings := make(map[string]int)
+		
 		for _, finding := range results.Findings {
-			if finding.Severity == "high" {
-				highSeverityCount++
+			severityCounts[finding.Severity]++
+			
+			// Check if this is a new finding in the PR
+			if finding.Metadata != nil {
+				if isNew, exists := finding.Metadata["is_new_in_pr"]; exists && isNew == "true" {
+					newFindings[finding.Severity]++
+				}
 			}
 		}
 
-		if highSeverityCount > 0 {
+		// Determine status based on severity and whether issues are new
+		if severityCounts["high"] > 0 {
 			state = "failure"
-			description = fmt.Sprintf("Found %d high severity security issues", highSeverityCount)
-		} else if len(results.Findings) > 0 {
+			if newFindings["high"] > 0 {
+				description = fmt.Sprintf("🚨 %d high severity issues found (%d new) - Fix before merging", severityCounts["high"], newFindings["high"])
+			} else {
+				description = fmt.Sprintf("🚨 %d high severity issues found - Fix before merging", severityCounts["high"])
+			}
+		} else if severityCounts["medium"] > 0 || severityCounts["low"] > 0 {
 			state = "success"
-			description = fmt.Sprintf("Found %d security issues (no high severity)", len(results.Findings))
+			totalIssues := severityCounts["medium"] + severityCounts["low"]
+			newIssues := newFindings["medium"] + newFindings["low"]
+			if newIssues > 0 {
+				description = fmt.Sprintf("✅ %d security issues found (%d new) - No high severity", totalIssues, newIssues)
+			} else {
+				description = fmt.Sprintf("✅ %d security issues found - No high severity", totalIssues)
+			}
 		} else {
 			state = "success"
-			description = "No security issues found"
+			description = "✅ No security issues found - All clear!"
 		}
 	} else if results.Status == "failed" {
 		state = "error"
-		description = "Security scan failed"
+		description = "❌ Security scan failed - Check logs for details"
 	} else {
 		state = "pending"
-		description = "Security scan in progress..."
+		description = "🔍 Security scan in progress..."
 	}
 
+	// Create both status check and check run for better GitHub integration
 	status := &StatusCheck{
 		State:       state,
 		Description: description,
@@ -434,67 +492,354 @@ func (h *WebhookHandler) updateStatusCheck(ctx context.Context, client *Client, 
 		TargetURL:   fmt.Sprintf("https://app.agentscan.dev/scans/%s", jobID),
 	}
 
-	return client.CreateStatusCheck(ctx, owner, repo, sha, status)
+	// Create status check
+	if err := client.CreateStatusCheck(ctx, owner, repo, sha, status); err != nil {
+		return fmt.Errorf("failed to create status check: %w", err)
+	}
+
+	// Also create/update check run for richer display
+	return h.updateCheckRun(ctx, client, owner, repo, sha, results, jobID)
 }
 
-// postPRComment posts a comment on the PR with scan results
-func (h *WebhookHandler) postPRComment(ctx context.Context, client *Client, owner, repo string, prNumber int, results *orchestrator.ScanResults) error {
+// updateCheckRun creates or updates a GitHub check run with detailed results
+func (h *WebhookHandler) updateCheckRun(ctx context.Context, client *Client, owner, repo, sha string, results *orchestrator.ScanResults, jobID string) error {
+	var status, conclusion string
+	var output *CheckRunOutput
+
+	if results.Status == "completed" {
+		status = "completed"
+		
+		// Count findings by severity
+		severityCounts := make(map[string]int)
+		for _, finding := range results.Findings {
+			severityCounts[finding.Severity]++
+		}
+
+		// Determine conclusion and create detailed output
+		if severityCounts["high"] > 0 {
+			conclusion = "failure"
+			output = &CheckRunOutput{
+				Title:   fmt.Sprintf("🚨 Security Issues Found - %d High Severity", severityCounts["high"]),
+				Summary: h.generateCheckRunSummary(results, severityCounts),
+				Annotations: h.generateCheckRunAnnotations(results),
+			}
+		} else if len(results.Findings) > 0 {
+			conclusion = "neutral"
+			totalIssues := severityCounts["medium"] + severityCounts["low"]
+			output = &CheckRunOutput{
+				Title:   fmt.Sprintf("✅ Security Scan Complete - %d Issues (No High Severity)", totalIssues),
+				Summary: h.generateCheckRunSummary(results, severityCounts),
+				Annotations: h.generateCheckRunAnnotations(results),
+			}
+		} else {
+			conclusion = "success"
+			output = &CheckRunOutput{
+				Title:   "✅ Security Scan Complete - No Issues Found",
+				Summary: "🎉 Your code is secure! No security vulnerabilities were detected.",
+			}
+		}
+	} else if results.Status == "failed" {
+		status = "completed"
+		conclusion = "failure"
+		output = &CheckRunOutput{
+			Title:   "❌ Security Scan Failed",
+			Summary: "The security scan encountered an error. Please check the logs and try again.",
+		}
+	} else {
+		status = "in_progress"
+		output = &CheckRunOutput{
+			Title:   "🔍 Security Scan in Progress",
+			Summary: "AgentScan is analyzing your code for security vulnerabilities...",
+		}
+	}
+
+	checkRun := &CheckRun{
+		Name:       "AgentScan Security",
+		HeadSHA:    sha,
+		Status:     status,
+		Conclusion: conclusion,
+		Output:     output,
+	}
+
+	// For now, create a new check run each time
+	// TODO: Store check run ID to update existing one
+	return client.CreateCheckRun(ctx, owner, repo, checkRun)
+}
+
+// generateCheckRunSummary generates a summary for the check run
+func (h *WebhookHandler) generateCheckRunSummary(results *orchestrator.ScanResults, severityCounts map[string]int) string {
+	var summary strings.Builder
+	
+	summary.WriteString("## Security Scan Results\n\n")
+	
+	if len(results.Findings) == 0 {
+		summary.WriteString("🎉 **No security issues found!** Your code looks secure.\n\n")
+		return summary.String()
+	}
+
+	summary.WriteString("### Issue Summary\n\n")
+	if high := severityCounts["high"]; high > 0 {
+		summary.WriteString(fmt.Sprintf("- 🔴 **%d High** severity issues\n", high))
+	}
+	if medium := severityCounts["medium"]; medium > 0 {
+		summary.WriteString(fmt.Sprintf("- 🟡 **%d Medium** severity issues\n", medium))
+	}
+	if low := severityCounts["low"]; low > 0 {
+		summary.WriteString(fmt.Sprintf("- 🟢 **%d Low** severity issues\n", low))
+	}
+
+	summary.WriteString("\n### Next Steps\n\n")
+	if severityCounts["high"] > 0 {
+		summary.WriteString("⚠️ **High severity issues must be fixed before merging.**\n\n")
+	}
+	summary.WriteString("📊 View detailed results and fix suggestions in the AgentScan dashboard.\n")
+
+	return summary.String()
+}
+
+// generateCheckRunAnnotations generates annotations for the check run (max 50)
+func (h *WebhookHandler) generateCheckRunAnnotations(results *orchestrator.ScanResults) []CheckRunAnnotation {
+	var annotations []CheckRunAnnotation
+	
+	// Prioritize high severity findings
+	highSeverityCount := 0
+	for _, finding := range results.Findings {
+		if finding.Severity == "high" && len(annotations) < 50 {
+			level := "failure"
+			if finding.Severity == "medium" {
+				level = "warning"
+			} else if finding.Severity == "low" {
+				level = "notice"
+			}
+
+			annotation := CheckRunAnnotation{
+				Path:            finding.File,
+				StartLine:       finding.Line,
+				EndLine:         finding.Line,
+				AnnotationLevel: level,
+				Message:         fmt.Sprintf("%s: %s", finding.RuleID, finding.Description),
+				Title:           finding.Title,
+			}
+
+			annotations = append(annotations, annotation)
+			highSeverityCount++
+		}
+	}
+
+	// Add medium/low severity if we have space
+	for _, finding := range results.Findings {
+		if finding.Severity != "high" && len(annotations) < 50 {
+			level := "warning"
+			if finding.Severity == "low" {
+				level = "notice"
+			}
+
+			annotation := CheckRunAnnotation{
+				Path:            finding.File,
+				StartLine:       finding.Line,
+				EndLine:         finding.Line,
+				AnnotationLevel: level,
+				Message:         fmt.Sprintf("%s: %s", finding.RuleID, finding.Description),
+				Title:           finding.Title,
+			}
+
+			annotations = append(annotations, annotation)
+		}
+	}
+
+	return annotations
+}
+
+// postPRComment posts or updates a comment on the PR with scan results
+func (h *WebhookHandler) postPRComment(ctx context.Context, client *Client, owner, repo string, prNumber int, results *orchestrator.ScanResults, jobID string) error {
 	if results.Status != "completed" {
 		return nil // Only comment on completed scans
 	}
 
-	comment := h.formatPRComment(results)
-	prComment := &PRComment{Body: comment}
+	comment := h.formatPRComment(results, jobID)
+	
+	// Try to find existing AgentScan comment to update instead of creating new one
+	existingCommentID, err := h.findExistingAgentScanComment(ctx, client, owner, repo, prNumber)
+	if err != nil {
+		fmt.Printf("Failed to find existing comment: %v\n", err)
+		// Continue with creating new comment
+	}
 
-	return client.CreatePRComment(ctx, owner, repo, prNumber, prComment)
+	if existingCommentID > 0 {
+		// Update existing comment
+		return client.UpdatePRComment(ctx, owner, repo, existingCommentID, &PRComment{Body: comment})
+	} else {
+		// Create new comment
+		return client.CreatePRComment(ctx, owner, repo, prNumber, &PRComment{Body: comment})
+	}
 }
 
-// formatPRComment formats scan results into a PR comment
-func (h *WebhookHandler) formatPRComment(results *orchestrator.ScanResults) string {
+// findExistingAgentScanComment finds an existing AgentScan comment on the PR
+func (h *WebhookHandler) findExistingAgentScanComment(ctx context.Context, client *Client, owner, repo string, prNumber int) (int64, error) {
+	comments, err := client.GetPRComments(ctx, owner, repo, prNumber)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get PR comments: %w", err)
+	}
+
+	// Look for comment that contains AgentScan signature
+	for _, comment := range comments {
+		if strings.Contains(comment.Body, "🛡️ AgentScan Security Report") {
+			return comment.ID, nil
+		}
+	}
+
+	return 0, nil // No existing comment found
+}
+
+// formatPRComment formats scan results into a rich, actionable PR comment
+func (h *WebhookHandler) formatPRComment(results *orchestrator.ScanResults, jobID string) string {
 	var comment strings.Builder
 	
-	comment.WriteString("## 🔒 AgentScan Security Report\n\n")
+	// Header with scan status and link to detailed results
+	comment.WriteString("## 🛡️ AgentScan Security Report\n\n")
 	
 	if len(results.Findings) == 0 {
-		comment.WriteString("✅ **No security issues found!**\n\n")
-		comment.WriteString("Your code looks secure. Great job! 🎉\n")
+		comment.WriteString("### ✅ All Clear!\n\n")
+		comment.WriteString("**No security vulnerabilities detected** in your changes. Your code looks secure! 🎉\n\n")
+		comment.WriteString(fmt.Sprintf("📊 [View detailed scan results](%s/scans/%s)\n\n", "https://app.agentscan.dev", jobID))
+		comment.WriteString("---\n")
+		comment.WriteString("*🔒 Secured by [AgentScan](https://agentscan.dev) - Multi-agent security scanning with intelligent deduplication*\n")
 		return comment.String()
 	}
 
-	// Count findings by severity
+	// Count findings by severity and new vs existing
 	severityCounts := make(map[string]int)
+	newFindings := make(map[string]int)
+	toolCoverage := make(map[string]bool)
+	
 	for _, finding := range results.Findings {
 		severityCounts[finding.Severity]++
-	}
-
-	// Summary
-	comment.WriteString("### Summary\n\n")
-	if high := severityCounts["high"]; high > 0 {
-		comment.WriteString(fmt.Sprintf("🔴 **%d High** severity issues\n", high))
-	}
-	if medium := severityCounts["medium"]; medium > 0 {
-		comment.WriteString(fmt.Sprintf("🟡 **%d Medium** severity issues\n", medium))
-	}
-	if low := severityCounts["low"]; low > 0 {
-		comment.WriteString(fmt.Sprintf("🟢 **%d Low** severity issues\n", low))
-	}
-	comment.WriteString("\n")
-
-	// High severity findings details
-	if severityCounts["high"] > 0 {
-		comment.WriteString("### 🔴 High Severity Issues\n\n")
-		for _, finding := range results.Findings {
-			if finding.Severity == "high" {
-				comment.WriteString(fmt.Sprintf("**%s** in `%s:%d`\n", finding.Title, finding.File, finding.Line))
-				comment.WriteString(fmt.Sprintf("- %s\n", finding.Description))
-				comment.WriteString(fmt.Sprintf("- Detected by: %s\n", finding.Tool))
-				comment.WriteString("\n")
+		toolCoverage[finding.Tool] = true
+		
+		// Check if this is a new finding in the PR (this would need to be set during scanning)
+		if finding.Metadata != nil {
+			if isNew, exists := finding.Metadata["is_new_in_pr"]; exists && isNew == "true" {
+				newFindings[finding.Severity]++
 			}
 		}
 	}
 
-	comment.WriteString("---\n")
-	comment.WriteString("*Powered by [AgentScan](https://agentscan.dev) - Multi-agent security scanning*\n")
+	// Summary with visual indicators
+	comment.WriteString("### 📊 Security Summary\n\n")
+	comment.WriteString("| Severity | Count | New in PR |\n")
+	comment.WriteString("|----------|-------|----------|\n")
+	
+	if high := severityCounts["high"]; high > 0 {
+		newHigh := newFindings["high"]
+		comment.WriteString(fmt.Sprintf("| 🔴 **High** | **%d** | %d |\n", high, newHigh))
+	}
+	if medium := severityCounts["medium"]; medium > 0 {
+		newMedium := newFindings["medium"]
+		comment.WriteString(fmt.Sprintf("| 🟡 **Medium** | **%d** | %d |\n", medium, newMedium))
+	}
+	if low := severityCounts["low"]; low > 0 {
+		newLow := newFindings["low"]
+		comment.WriteString(fmt.Sprintf("| 🟢 **Low** | **%d** | %d |\n", low, newLow))
+	}
+	
+	comment.WriteString("\n")
 
-	return comment.String()
+	// Tool coverage information
+	tools := make([]string, 0, len(toolCoverage))
+	for tool := range toolCoverage {
+		tools = append(tools, tool)
+	}
+	comment.WriteString(fmt.Sprintf("**🔍 Scanned with:** %s\n\n", strings.Join(tools, ", ")))
+
+	// Critical issues that need immediate attention
+	if severityCounts["high"] > 0 {
+		comment.WriteString("### 🚨 Critical Issues Requiring Attention\n\n")
+		comment.WriteString("> **⚠️ High severity vulnerabilities detected.** Please review and fix before merging.\n\n")
+		
+		highCount := 0
+		for _, finding := range results.Findings {
+			if finding.Severity == "high" && highCount < 3 { // Show max 3 high severity issues
+				comment.WriteString(fmt.Sprintf("#### %s\n", finding.Title))
+				comment.WriteString(fmt.Sprintf("**📁 File:** `%s:%d`\n", finding.File, finding.Line))
+				comment.WriteString(fmt.Sprintf("**🔍 Rule:** `%s`\n", finding.RuleID))
+				comment.WriteString(fmt.Sprintf("**🛠️ Tool:** %s", finding.Tool))
+				
+				// Add confidence score if available
+				if finding.Confidence > 0 {
+					comment.WriteString(fmt.Sprintf(" (Confidence: %.0f%%)", finding.Confidence*100))
+				}
+				comment.WriteString("\n\n")
+				
+				comment.WriteString(fmt.Sprintf("**📝 Description:** %s\n\n", finding.Description))
+				
+				// Add fix suggestion if available
+				if finding.FixSuggestion != nil {
+					if desc, ok := finding.FixSuggestion["description"].(string); ok && desc != "" {
+						comment.WriteString(fmt.Sprintf("**💡 Suggested Fix:** %s\n\n", desc))
+					}
+				}
+				
+				// Add references if available
+				if len(finding.References) > 0 {
+					comment.WriteString("**📚 References:**\n")
+					for _, ref := range finding.References {
+						comment.WriteString(fmt.Sprintf("- %s\n", ref))
+					}
+					comment.WriteString("\n")
+				}
+				
+				comment.WriteString("---\n\n")
+				highCount++
+			}
+		}
+		
+		if severityCounts["high"] > 3 {
+			remaining := severityCounts["high"] - 3
+			comment.WriteString(fmt.Sprintf("*... and %d more high severity issues. [View all findings](%s/scans/%s)*\n\n", remaining, "https://app.agentscan.dev", jobID))
+		}
+	}
+
+	// Medium severity summary (collapsed by default)
+	if severityCounts["medium"] > 0 {
+		comment.WriteString("### 🟡 Medium Severity Issues\n\n")
+		comment.WriteString("<details>\n")
+		comment.WriteString(fmt.Sprintf("<summary>%d medium severity issues found (click to expand)</summary>\n\n", severityCounts["medium"]))
+		
+		mediumCount := 0
+		for _, finding := range results.Findings {
+			if finding.Severity == "medium" && mediumCount < 5 { // Show max 5 medium issues
+				comment.WriteString(fmt.Sprintf("- **%s** in `%s:%d` - %s\n", finding.Title, finding.File, finding.Line, finding.Tool))
+				mediumCount++
+			}
+		}
+		
+		if severityCounts["medium"] > 5 {
+			remaining := severityCounts["medium"] - 5
+			comment.WriteString(fmt.Sprintf("- *... and %d more medium severity issues*\n", remaining))
+		}
+		
+		comment.WriteString("\n</details>\n\n")
+	}
+
+	// Action items and next steps
+	comment.WriteString("### 🎯 Next Steps\n\n")
+	
+	if severityCounts["high"] > 0 {
+		comment.WriteString("1. **🔴 Fix high severity issues** before merging this PR\n")
+		comment.WriteString("2. 📊 [Review detailed findings](%s/scans/%s) in the AgentScan dashboard\n")
+		comment.WriteString("3. 💬 Comment `/agentscan rescan` to re-run the security scan after fixes\n\n")
+	} else if severityCounts["medium"] > 0 {
+		comment.WriteString("1. 🟡 Consider addressing medium severity issues\n")
+		comment.WriteString("2. 📊 [Review detailed findings](%s/scans/%s) in the AgentScan dashboard\n")
+		comment.WriteString("3. ✅ No blocking issues - safe to merge\n\n")
+	}
+
+	// Footer with branding and links
+	comment.WriteString("---\n")
+	comment.WriteString("📊 **[View Full Report](%s/scans/%s)** | ")
+	comment.WriteString("📖 **[Documentation](https://docs.agentscan.dev)** | ")
+	comment.WriteString("🐛 **[Report Issue](https://github.com/agentscan/agentscan/issues)**\n\n")
+	comment.WriteString("*🛡️ Secured by [AgentScan](https://agentscan.dev) - Multi-agent security scanning with 80% fewer false positives*\n")
+
+	return fmt.Sprintf(comment.String(), "https://app.agentscan.dev", jobID, "https://app.agentscan.dev", jobID, "https://app.agentscan.dev", jobID)
 }

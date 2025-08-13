@@ -175,6 +175,47 @@ func (c *Client) CreatePRComment(ctx context.Context, owner, repo string, prNumb
 	return nil
 }
 
+// GetPRComments gets all comments on a pull request
+func (c *Client) GetPRComments(ctx context.Context, owner, repo string, prNumber int) ([]PRCommentResponse, error) {
+	path := fmt.Sprintf("/repos/%s/%s/issues/%d/comments", owner, repo, prNumber)
+	
+	resp, err := c.makeRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get PR comments: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var comments []PRCommentResponse
+	if err := json.NewDecoder(resp.Body).Decode(&comments); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return comments, nil
+}
+
+// UpdatePRComment updates an existing comment on a pull request
+func (c *Client) UpdatePRComment(ctx context.Context, owner, repo string, commentID int64, comment *PRComment) error {
+	path := fmt.Sprintf("/repos/%s/%s/issues/comments/%d", owner, repo, commentID)
+	
+	resp, err := c.makeRequest(ctx, "PATCH", path, comment)
+	if err != nil {
+		return fmt.Errorf("failed to update PR comment: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
 // CreateStatusCheck creates a status check for a commit
 func (c *Client) CreateStatusCheck(ctx context.Context, owner, repo, sha string, status *StatusCheck) error {
 	path := fmt.Sprintf("/repos/%s/%s/statuses/%s", owner, repo, sha)
@@ -298,11 +339,44 @@ type PullRequest struct {
 		SHA string `json:"sha"`
 		Ref string `json:"ref"`
 	} `json:"head"`
-	Base struct {
+	Base   struct {
 		SHA string `json:"sha"`
 		Ref string `json:"ref"`
 	} `json:"base"`
 	User struct {
 		Login string `json:"login"`
 	} `json:"user"`
+}
+
+// GetPRFiles gets the files changed in a pull request
+func (c *Client) GetPRFiles(ctx context.Context, owner, repo string, prNumber int) ([]PRFile, error) {
+	path := fmt.Sprintf("/repos/%s/%s/pulls/%d/files", owner, repo, prNumber)
+	
+	resp, err := c.makeRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get PR files: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var files []PRFile
+	if err := json.NewDecoder(resp.Body).Decode(&files); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return files, nil
+}
+
+// PRFile represents a file changed in a GitHub pull request
+type PRFile struct {
+	Filename  string `json:"filename"`
+	Status    string `json:"status"` // "added", "removed", "modified", "renamed"
+	Additions int    `json:"additions"`
+	Deletions int    `json:"deletions"`
+	Changes   int    `json:"changes"`
+	Patch     string `json:"patch,omitempty"`
 }

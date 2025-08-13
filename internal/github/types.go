@@ -136,6 +136,18 @@ type PRComment struct {
 	Body string `json:"body"`
 }
 
+// PRCommentResponse represents a GitHub pull request comment response
+type PRCommentResponse struct {
+	ID   int64  `json:"id"`
+	Body string `json:"body"`
+	User struct {
+		Login string `json:"login"`
+		Type  string `json:"type"`
+	} `json:"user"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // StatusCheck represents a GitHub status check
 type StatusCheck struct {
 	State       string `json:"state"` // pending, success, error, failure
