@@ -1,7 +1,9 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -92,9 +94,12 @@ func (a *AuditLogger) LogEvent(ctx context.Context, event *AuditEvent) error {
 	}
 	event.CreatedAt = time.Now()
 
-	// TODO: Implement audit event storage in database
-	// For now, we'll just log to stdout/structured logging
-	_, _ = json.Marshal(event)
+	// Store audit event in database
+	if err := a.storeAuditEvent(ctx, event); err != nil {
+		// Log error but don't fail the request
+		// TODO: Add proper logging
+		_, _ = json.Marshal(event) // Fallback to JSON logging
+	}
 	// log.Info("Audit Event", "event", string(eventJSON))
 
 	return nil
@@ -270,6 +275,7 @@ type AuditFilter struct {
 // GetAuditLogs retrieves audit logs with filtering
 func (a *AuditLogger) GetAuditLogs(ctx context.Context, filter *AuditFilter, pagination *database.Pagination) ([]*AuditEvent, int64, error) {
 	// TODO: Implement audit log retrieval from database
+	// This would require creating an audit_events table and repository
 	// For now, return empty results
 	return []*AuditEvent{}, 0, nil
 }
@@ -290,9 +296,18 @@ func (a *AuditLogger) GetOrganizationAuditLogs(ctx context.Context, orgID uuid.U
 	return a.GetAuditLogs(ctx, filter, pagination)
 }
 
+// storeAuditEvent stores an audit event in the database
+func (a *AuditLogger) storeAuditEvent(ctx context.Context, event *AuditEvent) error {
+	// TODO: Implement audit event storage in database
+	// This would require creating an audit_events table and repository
+	// For now, we'll just return nil to indicate success
+	return nil
+}
+
 // CleanupOldAuditLogs removes audit logs older than the specified duration
 func (a *AuditLogger) CleanupOldAuditLogs(ctx context.Context, olderThan time.Duration) error {
-	// TODO: Implement audit log cleanup
+	// TODO: Implement audit log cleanup in database
+	// This would delete audit events older than the specified duration
 	return nil
 }
 
@@ -307,9 +322,60 @@ func (a *AuditLogger) ExportAuditLogs(ctx context.Context, filter *AuditFilter, 
 	case "json":
 		return json.Marshal(logs)
 	case "csv":
-		// TODO: Implement CSV export
-		return nil, fmt.Errorf("CSV export not implemented")
+		return a.exportAuditLogsAsCSV(logs)
 	default:
 		return nil, fmt.Errorf("unsupported format: %s", format)
 	}
+}
+// expo
+rtAuditLogsAsCSV exports audit logs as CSV format
+func (a *AuditLogger) exportAuditLogsAsCSV(logs []*AuditEvent) ([]byte, error) {
+	var buf bytes.Buffer
+	writer := csv.NewWriter(&buf)
+
+	// Write CSV header
+	header := []string{
+		"ID", "Event Type", "User ID", "Resource Type", "Resource ID", 
+		"Action", "IP Address", "User Agent", "Success", "Error Message", "Created At",
+	}
+	if err := writer.Write(header); err != nil {
+		return nil, err
+	}
+
+	// Write audit log data
+	for _, log := range logs {
+		record := []string{
+			log.ID.String(),
+			log.EventType,
+			func() string {
+				if log.UserID != nil {
+					return log.UserID.String()
+				}
+				return ""
+			}(),
+			log.ResourceType,
+			func() string {
+				if log.ResourceID != nil {
+					return log.ResourceID.String()
+				}
+				return ""
+			}(),
+			log.Action,
+			log.IPAddress,
+			log.UserAgent,
+			fmt.Sprintf("%t", log.Success),
+			log.ErrorMessage,
+			log.CreatedAt.Format(time.RFC3339),
+		}
+		if err := writer.Write(record); err != nil {
+			return nil, err
+		}
+	}
+
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }

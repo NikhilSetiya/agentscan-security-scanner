@@ -6,13 +6,14 @@ import (
 	"github.com/agentscan/agentscan/internal/database"
 	"github.com/agentscan/agentscan/internal/findings"
 	"github.com/agentscan/agentscan/internal/github"
+	"github.com/agentscan/agentscan/internal/gitlab"
 	"github.com/agentscan/agentscan/internal/orchestrator"
 	"github.com/agentscan/agentscan/internal/queue"
 	"github.com/agentscan/agentscan/pkg/config"
 )
 
 // Router creates and configures the API router
-func NewRouter(cfg *config.Config, db *database.DB, redis *queue.RedisClient, repos *database.Repositories, orch orchestrator.OrchestrationService, q *queue.Queue, githubHandler *github.WebhookHandler) *gin.Engine {
+func NewRouter(cfg *config.Config, db *database.DB, redis *queue.RedisClient, repos *database.Repositories, orch orchestrator.OrchestrationService, q *queue.Queue, githubHandler *github.WebhookHandler, gitlabHandler *gitlab.WebhookHandler) *gin.Engine {
 	// Set Gin mode based on environment
 	if cfg.Logging.Level == "debug" {
 		gin.SetMode(gin.DebugMode)
@@ -25,6 +26,7 @@ func NewRouter(cfg *config.Config, db *database.DB, redis *queue.RedisClient, re
 	// Create services
 	auditLogger := NewAuditLogger(repos)
 	_ = NewRBACService(repos) // TODO: Use RBAC service in protected routes
+	agentResultHandler := NewAgentResultHandler(repos, orch)
 
 	// Add middleware
 	router.Use(RequestIDMiddleware())
@@ -33,7 +35,7 @@ func NewRouter(cfg *config.Config, db *database.DB, redis *queue.RedisClient, re
 	router.Use(CORSMiddleware())
 	router.Use(SecurityHeadersMiddleware())
 	router.Use(auditLogger.AuditMiddleware())
-	router.Use(RateLimitMiddleware())
+	router.Use(RateLimitMiddleware(redis))
 
 	// Health check endpoint (no auth required)
 	healthHandler := NewHealthHandler(db, redis)
@@ -146,10 +148,13 @@ func NewRouter(cfg *config.Config, db *database.DB, redis *queue.RedisClient, re
 
 				// GitLab webhook handler
 				webhooks.POST("/gitlab", func(c *gin.Context) {
-					// TODO: Implement GitLab webhook handler
-					SuccessResponse(c, map[string]string{
-						"message": "GitLab webhook received",
-					})
+					if gitlabHandler != nil {
+						gitlabHandler.HandleWebhook(c.Writer, c.Request)
+					} else {
+						SuccessResponse(c, map[string]string{
+							"message": "GitLab webhook received (handler not configured)",
+						})
+					}
 				})
 			}
 
@@ -164,12 +169,7 @@ func NewRouter(cfg *config.Config, db *database.DB, redis *queue.RedisClient, re
 				})
 
 				// Agent result submission
-				agents.POST("/results", func(c *gin.Context) {
-					// TODO: Implement agent result submission
-					SuccessResponse(c, map[string]string{
-						"message": "Results received",
-					})
-				})
+				agents.POST("/results", agentResultHandler.SubmitResults)
 			}
 		}
 	}
@@ -191,5 +191,12 @@ func SetupRoutes(cfg *config.Config, db *database.DB, redis *queue.RedisClient, 
 		githubHandler = github.NewWebhookHandler(repos, orch.(*orchestrator.Service), githubService)
 	}
 	
-	return NewRouter(cfg, db, redis, repos, orch, q, githubHandler)
+	// Initialize GitLab service if configured
+	var gitlabHandler *gitlab.WebhookHandler
+	if cfg.Auth.GitLabClientID != "" && cfg.Auth.GitLabSecret != "" {
+		gitlabService := gitlab.NewService(cfg, repos)
+		gitlabHandler = gitlab.NewWebhookHandler(repos, orch.(*orchestrator.Service), gitlabService)
+	}
+	
+	return NewRouter(cfg, db, redis, repos, orch, q, githubHandler, gitlabHandler)
 }

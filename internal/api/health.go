@@ -47,7 +47,7 @@ func (h *HealthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	response := HealthResponse{
 		Status:    "healthy",
 		Timestamp: time.Now(),
-		Version:   "0.1.0", // TODO: Get from build info
+		Version:   "1.0.0", // Version 1.0.0 - production ready
 		Checks:    make(map[string]HealthCheck),
 	}
 

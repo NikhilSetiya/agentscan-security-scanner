@@ -1,6 +1,8 @@
 package api
 
 import (
+	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -8,6 +10,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 
+	"github.com/agentscan/agentscan/internal/queue"
 	"github.com/agentscan/agentscan/pkg/config"
 	"github.com/agentscan/agentscan/pkg/types"
 )
@@ -183,10 +186,52 @@ func OptionalAuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 	})
 }
 
-// RateLimitMiddleware provides basic rate limiting
-func RateLimitMiddleware() gin.HandlerFunc {
-	// TODO: Implement proper rate limiting with Redis
+// RateLimitMiddleware provides Redis-based rate limiting
+func RateLimitMiddleware(redis *queue.RedisClient) gin.HandlerFunc {
 	return gin.HandlerFunc(func(c *gin.Context) {
+		if redis == nil {
+			c.Next()
+			return
+		}
+
+		// Get client IP
+		clientIP := c.ClientIP()
+		
+		// Create rate limit key
+		key := fmt.Sprintf("rate_limit:%s", clientIP)
+		
+		// Get current request count
+		ctx := c.Request.Context()
+		count, err := redis.Client().Get(ctx, key).Int()
+		if err != nil && err.Error() != "redis: nil" {
+			// Redis error, allow request but log error
+			c.Next()
+			return
+		}
+
+		// Rate limit: 100 requests per minute per IP
+		limit := 100
+		window := 60 // seconds
+
+		if count >= limit {
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error": "Rate limit exceeded",
+				"retry_after": window,
+			})
+			c.Abort()
+			return
+		}
+
+		// Increment counter
+		pipe := redis.Client().Pipeline()
+		pipe.Incr(ctx, key)
+		pipe.Expire(ctx, key, time.Duration(window)*time.Second)
+		_, err = pipe.Exec(ctx)
+		if err != nil {
+			// Redis error, allow request but log error
+			// TODO: Add proper logging
+		}
+
 		c.Next()
 	})
 }

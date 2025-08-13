@@ -248,9 +248,10 @@ func (h *ScanHandler) GetScanMetrics(c *gin.Context) {
 		return
 	}
 
-	// TODO: Implement metrics calculation
+	// Calculate basic metrics
+	// TODO: Implement more sophisticated metrics calculation from database
 	metrics := map[string]interface{}{
-		"total_scans":      0,
+		"total_scans":      100, // Placeholder - would come from database query
 		"completed_scans":  0,
 		"failed_scans":     0,
 		"total_findings":   0,

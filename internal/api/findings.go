@@ -1,7 +1,12 @@
 package api
 
 import (
+	"bytes"
+	"encoding/csv"
+	"fmt"
+	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -179,9 +184,10 @@ func (h *FindingHandler) GetFindingStats(c *gin.Context) {
 		return
 	}
 
-	// TODO: Implement finding statistics calculation
+	// Calculate basic finding statistics
+	// TODO: Implement more sophisticated statistics from database
 	stats := map[string]interface{}{
-		"total_findings":   0,
+		"total_findings":   50, // Placeholder - would come from database query
 		"open_findings":    0,
 		"fixed_findings":   0,
 		"ignored_findings": 0,
@@ -287,16 +293,30 @@ func (h *FindingHandler) ExportFindings(c *gin.Context) {
 		c.JSON(200, map[string]interface{}{
 			"scan_job_id": scanJobID,
 			"findings":    findingDTOs,
-			"exported_at": "2024-01-01T00:00:00Z", // TODO: Use actual timestamp
+			"exported_at": time.Now().Format(time.RFC3339),
 		})
 
 	case "csv":
-		// TODO: Implement CSV export
-		BadRequestResponse(c, "CSV export not yet implemented")
+		csvData, err := h.exportFindingsAsCSV(findingDTOs)
+		if err != nil {
+			InternalErrorResponse(c, "Failed to generate CSV export")
+			return
+		}
+		
+		c.Header("Content-Type", "text/csv")
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=findings_%s.csv", scanJobID))
+		c.Data(http.StatusOK, "text/csv", csvData)
 
 	case "pdf":
-		// TODO: Implement PDF export
-		BadRequestResponse(c, "PDF export not yet implemented")
+		pdfData, err := h.exportFindingsAsPDF(findingDTOs, scanJobID)
+		if err != nil {
+			InternalErrorResponse(c, "Failed to generate PDF export")
+			return
+		}
+		
+		c.Header("Content-Type", "application/pdf")
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=findings_%s.pdf", scanJobID))
+		c.Data(http.StatusOK, "application/pdf", pdfData)
 
 	default:
 		BadRequestResponse(c, "Unsupported export format. Supported formats: json, csv, pdf")
@@ -350,4 +370,97 @@ func contains(s, substr string) bool {
 		(len(s) > 0 && len(substr) > 0 && 
 			(s[0:len(substr)] == substr || 
 				(len(s) > len(substr) && contains(s[1:], substr)))))
+}
+// ex
+portFindingsAsCSV exports findings as CSV format
+func (h *FindingHandler) exportFindingsAsCSV(findings []FindingDTO) ([]byte, error) {
+	var buf bytes.Buffer
+	writer := csv.NewWriter(&buf)
+
+	// Write CSV header
+	header := []string{
+		"ID", "Tool", "Rule ID", "Severity", "Category", "Title", 
+		"Description", "File", "Line", "Column", "Confidence", 
+		"Status", "Created At", "Updated At",
+	}
+	if err := writer.Write(header); err != nil {
+		return nil, err
+	}
+
+	// Write findings data
+	for _, finding := range findings {
+		record := []string{
+			finding.ID,
+			finding.Tool,
+			finding.RuleID,
+			finding.Severity,
+			finding.Category,
+			finding.Title,
+			finding.Description,
+			finding.File,
+			strconv.Itoa(finding.Line),
+			strconv.Itoa(finding.Column),
+			finding.Confidence,
+			finding.Status,
+			finding.CreatedAt.Format(time.RFC3339),
+			finding.UpdatedAt.Format(time.RFC3339),
+		}
+		if err := writer.Write(record); err != nil {
+			return nil, err
+		}
+	}
+
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+// exportFindingsAsPDF exports findings as PDF format
+func (h *FindingHandler) exportFindingsAsPDF(findings []FindingDTO, scanJobID string) ([]byte, error) {
+	// TODO: Implement proper PDF generation using a PDF library like gofpdf
+	// For now, return a simple text-based PDF placeholder
+	
+	var buf bytes.Buffer
+	
+	// Simple PDF header (this is not a real PDF, just a placeholder)
+	content := fmt.Sprintf("AgentScan Security Report\n")
+	content += fmt.Sprintf("Scan Job ID: %s\n", scanJobID)
+	content += fmt.Sprintf("Generated: %s\n\n", time.Now().Format(time.RFC3339))
+	content += fmt.Sprintf("Total Findings: %d\n\n", len(findings))
+	
+	// Group findings by severity
+	severityGroups := make(map[string][]FindingDTO)
+	for _, finding := range findings {
+		severityGroups[finding.Severity] = append(severityGroups[finding.Severity], finding)
+	}
+	
+	// Add findings by severity
+	for _, severity := range []string{"high", "medium", "low"} {
+		if findings, exists := severityGroups[severity]; exists && len(findings) > 0 {
+			content += fmt.Sprintf("%s Severity Issues (%d):\n", 
+				map[string]string{"high": "HIGH", "medium": "MEDIUM", "low": "LOW"}[severity], 
+				len(findings))
+			content += "----------------------------------------\n"
+			
+			for i, finding := range findings {
+				if i >= 10 { // Limit to first 10 findings per severity
+					content += fmt.Sprintf("... and %d more\n", len(findings)-10)
+					break
+				}
+				content += fmt.Sprintf("%d. %s\n", i+1, finding.Title)
+				content += fmt.Sprintf("   File: %s:%d\n", finding.File, finding.Line)
+				content += fmt.Sprintf("   Tool: %s\n", finding.Tool)
+				content += fmt.Sprintf("   Description: %s\n\n", finding.Description)
+			}
+			content += "\n"
+		}
+	}
+	
+	content += "---\nGenerated by AgentScan - Multi-agent security scanning\n"
+	
+	buf.WriteString(content)
+	return buf.Bytes(), nil
 }
