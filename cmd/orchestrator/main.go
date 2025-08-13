@@ -14,6 +14,8 @@ import (
 	"github.com/agentscan/agentscan/agents/sca/govulncheck"
 	"github.com/agentscan/agentscan/agents/sca/npm"
 	"github.com/agentscan/agentscan/agents/sca/pip"
+	"github.com/agentscan/agentscan/agents/secrets/gitsecrets"
+	"github.com/agentscan/agentscan/agents/secrets/trufflehog"
 	"github.com/agentscan/agentscan/internal/orchestrator"
 	"github.com/agentscan/agentscan/internal/queue"
 	"github.com/agentscan/agentscan/pkg/config"
@@ -136,8 +138,18 @@ func registerAgents(agentManager *orchestrator.AgentManager) error {
 	}
 	log.Println("Registered govulncheck SCA agent")
 
-	// TODO: Register additional agents as they are implemented
-	// - Secret scanning agents
+	// Register secret scanning agents
+	trufflehogAgent := trufflehog.NewAgent()
+	if err := agentManager.RegisterAgent("trufflehog", trufflehogAgent); err != nil {
+		return err
+	}
+	log.Println("Registered TruffleHog secret scanning agent")
+
+	gitSecretsAgent := gitsecrets.NewAgent()
+	if err := agentManager.RegisterAgent("git-secrets", gitSecretsAgent); err != nil {
+		return err
+	}
+	log.Println("Registered git-secrets secret scanning agent")
 
 	return nil
 }

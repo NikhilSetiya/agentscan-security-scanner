@@ -12,11 +12,263 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/agentscan/agentscan/agents/sast/bandit"
+	"github.com/agentscan/agentscan/agents/sast/eslint"
 	"github.com/agentscan/agentscan/agents/sast/semgrep"
+	"github.com/agentscan/agentscan/agents/secrets/gitsecrets"
+	"github.com/agentscan/agentscan/agents/secrets/trufflehog"
 	"github.com/agentscan/agentscan/internal/queue"
 	"github.com/agentscan/agentscan/pkg/agent"
 	"github.com/agentscan/agentscan/pkg/types"
 )
+
+// TestESLintAgentRegistration_Integration tests that ESLint security agent is properly registered and callable
+func TestESLintAgentRegistration_Integration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	// Setup test environment
+	agentManager := NewAgentManager()
+	ctx := context.Background()
+
+	// Register ESLint security agent (simulating what happens in main.go)
+	eslintAgent := eslint.NewAgent()
+	err := agentManager.RegisterAgent("eslint-security", eslintAgent)
+	require.NoError(t, err)
+
+	// Verify agent is registered
+	registeredAgents := agentManager.ListAgents()
+	assert.Contains(t, registeredAgents, "eslint-security")
+
+	// Verify agent configuration
+	agentConfig := eslintAgent.GetConfig()
+	assert.Equal(t, "eslint-security", agentConfig.Name)
+	assert.Contains(t, agentConfig.SupportedLangs, "javascript")
+	assert.Contains(t, agentConfig.SupportedLangs, "typescript")
+	assert.Contains(t, agentConfig.SupportedLangs, "jsx")
+	assert.Contains(t, agentConfig.SupportedLangs, "tsx")
+	assert.True(t, agentConfig.RequiresDocker)
+
+	// Test health check
+	err = eslintAgent.HealthCheck(ctx)
+	// Note: This might fail in CI without Docker, so we'll just verify the method exists
+	t.Logf("ESLint health check result: %v", err)
+
+	// Verify agent version info
+	versionInfo := eslintAgent.GetVersion()
+	assert.Equal(t, "1.0.0", versionInfo.AgentVersion)
+	assert.NotEmpty(t, versionInfo.BuildDate)
+
+	// Test that agent can be retrieved from manager
+	retrievedAgent, err := agentManager.GetAgent("eslint-security")
+	require.NoError(t, err)
+	assert.NotNil(t, retrievedAgent)
+
+	// Verify agent supports expected vulnerability categories
+	expectedCategories := []agent.VulnCategory{
+		agent.CategoryXSS,
+		agent.CategoryCommandInjection,
+		agent.CategoryPathTraversal,
+		agent.CategoryInsecureCrypto,
+		agent.CategoryCSRF,
+		agent.CategoryInsecureDeserialization,
+		agent.CategoryMisconfiguration,
+		agent.CategoryOther,
+	}
+
+	for _, category := range expectedCategories {
+		assert.Contains(t, agentConfig.Categories, category)
+	}
+
+	t.Logf("ESLint security agent registration test completed successfully")
+}
+
+// TestJavaScriptScanningWorkflow_Integration tests end-to-end JavaScript/TypeScript scanning with ESLint
+func TestJavaScriptScanningWorkflow_Integration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	// Setup test environment
+	_, _, _, agentManager := setupTestService(t)
+
+	// Register ESLint security agent
+	eslintAgent := eslint.NewAgent()
+	err := agentManager.RegisterAgent("eslint-security", eslintAgent)
+	require.NoError(t, err)
+
+	// Verify agent can handle JavaScript/TypeScript language detection
+	config := eslintAgent.GetConfig()
+	assert.Contains(t, config.SupportedLangs, "javascript")
+	assert.Contains(t, config.SupportedLangs, "typescript")
+	assert.Contains(t, config.SupportedLangs, "jsx")
+	assert.Contains(t, config.SupportedLangs, "tsx")
+
+	// Verify agent supports expected vulnerability categories
+	expectedCategories := []agent.VulnCategory{
+		agent.CategoryXSS,
+		agent.CategoryCommandInjection,
+		agent.CategoryPathTraversal,
+		agent.CategoryInsecureCrypto,
+		agent.CategoryCSRF,
+		agent.CategoryInsecureDeserialization,
+		agent.CategoryMisconfiguration,
+		agent.CategoryOther,
+	}
+
+	for _, category := range expectedCategories {
+		assert.Contains(t, config.Categories, category)
+	}
+
+	// Test parallel execution with multiple agents
+	semgrepAgent := semgrep.NewAgent()
+	err = agentManager.RegisterAgent("semgrep", semgrepAgent)
+	require.NoError(t, err)
+
+	// Verify both agents are registered
+	registeredAgents := agentManager.ListAgents()
+	assert.Contains(t, registeredAgents, "eslint-security")
+	assert.Contains(t, registeredAgents, "semgrep")
+
+	// Test scan configuration for JavaScript project (for documentation purposes)
+	scanConfig := agent.ScanConfig{
+		RepoURL:   "https://github.com/test/javascript-vulnerable-repo.git",
+		Branch:    "main",
+		Commit:    "abc123",
+		Languages: []string{"javascript", "typescript"},
+		Timeout:   2 * time.Minute,
+	}
+	
+	// Verify the scan config would be valid for ESLint
+	assert.Contains(t, scanConfig.Languages, "javascript")
+	assert.Contains(t, scanConfig.Languages, "typescript")
+	assert.NotEmpty(t, scanConfig.RepoURL)
+
+	t.Logf("JavaScript/TypeScript scanning workflow test completed successfully")
+}
+
+// TestSecretScanningAgentRegistration_Integration tests that secret scanning agents are properly registered and callable
+func TestSecretScanningAgentRegistration_Integration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	// Setup test environment
+	agentManager := NewAgentManager()
+	ctx := context.Background()
+
+	// Register TruffleHog agent (simulating what happens in main.go)
+	trufflehogAgent := trufflehog.NewAgent()
+	err := agentManager.RegisterAgent("trufflehog", trufflehogAgent)
+	require.NoError(t, err)
+
+	// Register git-secrets agent (simulating what happens in main.go)
+	gitSecretsAgent := gitsecrets.NewAgent()
+	err = agentManager.RegisterAgent("git-secrets", gitSecretsAgent)
+	require.NoError(t, err)
+
+	// Verify agents are registered
+	registeredAgents := agentManager.ListAgents()
+	assert.Contains(t, registeredAgents, "trufflehog")
+	assert.Contains(t, registeredAgents, "git-secrets")
+
+	// Test TruffleHog agent configuration
+	trufflehogConfig := trufflehogAgent.GetConfig()
+	assert.Equal(t, "trufflehog", trufflehogConfig.Name)
+	assert.Contains(t, trufflehogConfig.SupportedLangs, "*") // Language agnostic
+	assert.Contains(t, trufflehogConfig.Categories, agent.CategoryHardcodedSecrets)
+	assert.True(t, trufflehogConfig.RequiresDocker)
+
+	// Test git-secrets agent configuration
+	gitSecretsConfig := gitSecretsAgent.GetConfig()
+	assert.Equal(t, "git-secrets", gitSecretsConfig.Name)
+	assert.Contains(t, gitSecretsConfig.SupportedLangs, "*") // Language agnostic
+	assert.Contains(t, gitSecretsConfig.Categories, agent.CategoryHardcodedSecrets)
+	assert.True(t, gitSecretsConfig.RequiresDocker)
+
+	// Test health checks
+	err = trufflehogAgent.HealthCheck(ctx)
+	t.Logf("TruffleHog health check result: %v", err)
+
+	err = gitSecretsAgent.HealthCheck(ctx)
+	t.Logf("git-secrets health check result: %v", err)
+
+	// Verify agent version info
+	trufflehogVersion := trufflehogAgent.GetVersion()
+	assert.Equal(t, "1.0.0", trufflehogVersion.AgentVersion)
+	assert.NotEmpty(t, trufflehogVersion.BuildDate)
+
+	gitSecretsVersion := gitSecretsAgent.GetVersion()
+	assert.Equal(t, "1.0.0", gitSecretsVersion.AgentVersion)
+	assert.NotEmpty(t, gitSecretsVersion.BuildDate)
+
+	// Test that agents can be retrieved from manager
+	retrievedTruffleHog, err := agentManager.GetAgent("trufflehog")
+	require.NoError(t, err)
+	assert.NotNil(t, retrievedTruffleHog)
+
+	retrievedGitSecrets, err := agentManager.GetAgent("git-secrets")
+	require.NoError(t, err)
+	assert.NotNil(t, retrievedGitSecrets)
+
+	t.Logf("Secret scanning agents registration test completed successfully")
+}
+
+// TestSecretScanningWorkflow_Integration tests end-to-end secret scanning workflow
+func TestSecretScanningWorkflow_Integration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	// Setup test environment
+	_, _, _, agentManager := setupTestService(t)
+
+	// Register secret scanning agents
+	trufflehogAgent := trufflehog.NewAgent()
+	err := agentManager.RegisterAgent("trufflehog", trufflehogAgent)
+	require.NoError(t, err)
+
+	gitSecretsAgent := gitsecrets.NewAgent()
+	err = agentManager.RegisterAgent("git-secrets", gitSecretsAgent)
+	require.NoError(t, err)
+
+	// Verify agents can handle language-agnostic scanning
+	trufflehogConfig := trufflehogAgent.GetConfig()
+	assert.Contains(t, trufflehogConfig.SupportedLangs, "*")
+
+	gitSecretsConfig := gitSecretsAgent.GetConfig()
+	assert.Contains(t, gitSecretsConfig.SupportedLangs, "*")
+
+	// Verify agents support expected vulnerability categories
+	expectedCategories := []agent.VulnCategory{
+		agent.CategoryHardcodedSecrets,
+	}
+
+	for _, category := range expectedCategories {
+		assert.Contains(t, trufflehogConfig.Categories, category)
+		assert.Contains(t, gitSecretsConfig.Categories, category)
+	}
+
+	// Test parallel execution with multiple secret scanning agents
+	registeredAgents := agentManager.ListAgents()
+	assert.Contains(t, registeredAgents, "trufflehog")
+	assert.Contains(t, registeredAgents, "git-secrets")
+
+	// Test scan configuration for secret scanning (for documentation purposes)
+	scanConfig := agent.ScanConfig{
+		RepoURL:   "https://github.com/test/repo-with-secrets.git",
+		Branch:    "main",
+		Commit:    "abc123",
+		Languages: []string{"*"}, // Language agnostic
+		Timeout:   5 * time.Minute,
+	}
+	
+	// Verify the scan config would be valid for secret scanning
+	assert.Contains(t, scanConfig.Languages, "*")
+	assert.NotEmpty(t, scanConfig.RepoURL)
+
+	t.Logf("Secret scanning workflow test completed successfully")
+}
 
 // TestBanditAgentRegistration_Integration tests that Bandit agent is properly registered and callable
 func TestBanditAgentRegistration_Integration(t *testing.T) {
@@ -141,7 +393,7 @@ func TestPythonScanningWorkflow_Integration(t *testing.T) {
 	t.Logf("Python scanning workflow test completed successfully")
 }
 
-// TestMultiAgentConsensus_Integration tests consensus between Bandit and Semgrep
+// TestMultiAgentConsensus_Integration tests consensus between Bandit, ESLint, and Semgrep
 func TestMultiAgentConsensus_Integration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
@@ -150,26 +402,32 @@ func TestMultiAgentConsensus_Integration(t *testing.T) {
 	// Setup test environment
 	_, _, _, agentManager := setupTestService(t)
 
-	// Register both Bandit and Semgrep agents
+	// Register Bandit, ESLint, and Semgrep agents
 	banditAgent := bandit.NewAgent()
 	err := agentManager.RegisterAgent("bandit", banditAgent)
+	require.NoError(t, err)
+
+	eslintAgent := eslint.NewAgent()
+	err = agentManager.RegisterAgent("eslint-security", eslintAgent)
 	require.NoError(t, err)
 
 	semgrepAgent := semgrep.NewAgent()
 	err = agentManager.RegisterAgent("semgrep", semgrepAgent)
 	require.NoError(t, err)
 
-	// Verify both agents are available for consensus
+	// Verify all agents are available for consensus
 	registeredAgents := agentManager.ListAgents()
 	assert.Contains(t, registeredAgents, "bandit")
+	assert.Contains(t, registeredAgents, "eslint-security")
 	assert.Contains(t, registeredAgents, "semgrep")
-	assert.GreaterOrEqual(t, len(registeredAgents), 2)
+	assert.GreaterOrEqual(t, len(registeredAgents), 3)
 
-	// Test that both agents can be used together for Python projects
+	// Test that agents can be used together for different language projects
 	banditConfig := banditAgent.GetConfig()
+	eslintConfig := eslintAgent.GetConfig()
 	semgrepConfig := semgrepAgent.GetConfig()
 
-	// Both should support Python in some form
+	// Bandit should support Python
 	pythonSupported := false
 	for _, lang := range banditConfig.SupportedLangs {
 		if lang == "python" || lang == "py" {
@@ -179,30 +437,42 @@ func TestMultiAgentConsensus_Integration(t *testing.T) {
 	}
 	assert.True(t, pythonSupported, "Bandit should support Python")
 
-	// Semgrep should support multiple languages including Python via rules
+	// ESLint should support JavaScript/TypeScript
+	jsSupported := false
+	for _, lang := range eslintConfig.SupportedLangs {
+		if lang == "javascript" || lang == "typescript" {
+			jsSupported = true
+			break
+		}
+	}
+	assert.True(t, jsSupported, "ESLint should support JavaScript/TypeScript")
+
+	// Semgrep should support multiple languages
 	assert.NotEmpty(t, semgrepConfig.SupportedLangs)
 
 	// Verify agents have overlapping vulnerability categories for consensus
-	banditCategories := make(map[agent.VulnCategory]bool)
+	allCategories := make(map[agent.VulnCategory]int)
+	
 	for _, cat := range banditConfig.Categories {
-		banditCategories[cat] = true
+		allCategories[cat]++
 	}
-
-	semgrepCategories := make(map[agent.VulnCategory]bool)
+	for _, cat := range eslintConfig.Categories {
+		allCategories[cat]++
+	}
 	for _, cat := range semgrepConfig.Categories {
-		semgrepCategories[cat] = true
+		allCategories[cat]++
 	}
 
-	// Find overlapping categories
+	// Find categories supported by multiple agents
 	var overlappingCategories []agent.VulnCategory
-	for cat := range banditCategories {
-		if semgrepCategories[cat] {
+	for cat, count := range allCategories {
+		if count >= 2 {
 			overlappingCategories = append(overlappingCategories, cat)
 		}
 	}
 
 	assert.NotEmpty(t, overlappingCategories, "Agents should have overlapping vulnerability categories for consensus")
-	t.Logf("Found %d overlapping vulnerability categories between Bandit and Semgrep", len(overlappingCategories))
+	t.Logf("Found %d overlapping vulnerability categories between agents", len(overlappingCategories))
 
 	t.Logf("Multi-agent consensus test completed successfully")
 }

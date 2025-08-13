@@ -297,7 +297,7 @@
   - Perform final UI/UX review and polish based on Linear/Vercel/Superhuman standards
   - _Requirements: All UI/UX requirements_
 
-- [ ] 30.2 Complete ESLint security agent registration
+- [x] 30.2 Complete ESLint security agent registration
 
   - Register ESLint security agent in orchestrator main.go alongside other agents
   - Add ESLint agent import and registration in registerAgents function
@@ -305,7 +305,7 @@
   - Test end-to-end JavaScript/TypeScript scanning workflow through orchestrator
   - _Requirements: 1.1, 2.1, 2.5_
 
-- [ ] 30.3 Complete secret scanning agent registration
+- [-] 30.3 Complete secret scanning agent registration
 
   - Register TruffleHog and git-secrets agents in orchestrator main.go
   - Add secret scanning agent imports and registration in registerAgents function

@@ -28,6 +28,8 @@ func TestRegisterAgents(t *testing.T) {
 		"npm-audit",
 		"pip-audit",
 		"govulncheck",
+		"trufflehog",
+		"git-secrets",
 	}
 
 	for _, agentName := range expectedAgents {
@@ -93,7 +95,7 @@ func TestAgentManagerOperations(t *testing.T) {
 
 	// Test listing agents
 	agents = agentManager.ListAgents()
-	assert.Len(t, agents, 6, "Should have 6 registered agents")
+	assert.Len(t, agents, 8, "Should have 8 registered agents")
 
 	// Test getting non-existent agent
 	nonExistentAgent, err := agentManager.GetAgent("non-existent")
@@ -116,17 +118,109 @@ func TestESLintAgentSpecificFunctionality(t *testing.T) {
 	err := registerAgents(agentManager)
 	require.NoError(t, err)
 
-	eslintAgent, exists := agentManager.GetAgent("eslint-security")
-	require.True(t, exists)
+	eslintAgent, err := agentManager.GetAgent("eslint-security")
+	require.NoError(t, err)
+	require.NotNil(t, eslintAgent)
 
 	// Test that ESLint agent supports JavaScript and TypeScript
 	config := eslintAgent.GetConfig()
-	supportedLangs := config.SupportedLanguages
+	supportedLangs := config.SupportedLangs
 	
 	assert.Contains(t, supportedLangs, "javascript", "ESLint should support JavaScript")
 	assert.Contains(t, supportedLangs, "typescript", "ESLint should support TypeScript")
+	assert.Contains(t, supportedLangs, "jsx", "ESLint should support JSX")
+	assert.Contains(t, supportedLangs, "tsx", "ESLint should support TSX")
 
-	// Test agent categories
-	assert.Contains(t, config.Categories, "sast", "ESLint should be categorized as SAST")
-	assert.Contains(t, config.Categories, "security", "ESLint should be categorized as security")
+	// Test agent vulnerability categories
+	expectedCategories := []agent.VulnCategory{
+		agent.CategoryXSS,
+		agent.CategoryCommandInjection,
+		agent.CategoryPathTraversal,
+		agent.CategoryInsecureCrypto,
+		agent.CategoryCSRF,
+		agent.CategoryInsecureDeserialization,
+		agent.CategoryMisconfiguration,
+		agent.CategoryOther,
+	}
+
+	for _, category := range expectedCategories {
+		assert.Contains(t, config.Categories, category, "ESLint should support category %s", category)
+	}
+
+	// Test that agent requires Docker
+	assert.True(t, config.RequiresDocker, "ESLint agent should require Docker")
+
+	// Test agent version info
+	versionInfo := eslintAgent.GetVersion()
+	assert.Equal(t, "1.0.0", versionInfo.AgentVersion)
+	assert.NotEmpty(t, versionInfo.BuildDate)
+}
+
+func TestSecretScanningAgentsIntegration(t *testing.T) {
+	// Create agent manager and register agents
+	agentManager := orchestrator.NewAgentManager()
+	err := registerAgents(agentManager)
+	require.NoError(t, err)
+
+	// Test TruffleHog agent
+	t.Run("TruffleHog", func(t *testing.T) {
+		trufflehogAgent, err := agentManager.GetAgent("trufflehog")
+		require.NoError(t, err, "TruffleHog agent should be registered")
+		require.NotNil(t, trufflehogAgent, "TruffleHog agent should not be nil")
+
+		// Test agent configuration
+		config := trufflehogAgent.GetConfig()
+		assert.Equal(t, "trufflehog", config.Name)
+		assert.Equal(t, "1.0.0", config.Version)
+		assert.Contains(t, config.SupportedLangs, "*") // Language agnostic
+		assert.Contains(t, config.Categories, agent.CategoryHardcodedSecrets)
+		assert.True(t, config.RequiresDocker, "TruffleHog agent should require Docker")
+
+		// Test health check
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		err = trufflehogAgent.HealthCheck(ctx)
+		if err != nil {
+			t.Logf("TruffleHog agent health check failed (expected in CI without Docker): %v", err)
+		} else {
+			t.Log("TruffleHog agent health check passed")
+		}
+
+		// Test agent version info
+		versionInfo := trufflehogAgent.GetVersion()
+		assert.Equal(t, "1.0.0", versionInfo.AgentVersion)
+		assert.NotEmpty(t, versionInfo.BuildDate)
+	})
+
+	// Test git-secrets agent
+	t.Run("GitSecrets", func(t *testing.T) {
+		gitSecretsAgent, err := agentManager.GetAgent("git-secrets")
+		require.NoError(t, err, "git-secrets agent should be registered")
+		require.NotNil(t, gitSecretsAgent, "git-secrets agent should not be nil")
+
+		// Test agent configuration
+		config := gitSecretsAgent.GetConfig()
+		assert.Equal(t, "git-secrets", config.Name)
+		assert.Equal(t, "1.0.0", config.Version)
+		assert.Contains(t, config.SupportedLangs, "*") // Language agnostic
+		assert.Contains(t, config.Categories, agent.CategoryHardcodedSecrets)
+		assert.True(t, config.RequiresDocker, "git-secrets agent should require Docker")
+
+		// Test health check
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		err = gitSecretsAgent.HealthCheck(ctx)
+		if err != nil {
+			t.Logf("git-secrets agent health check failed (expected in CI without Docker): %v", err)
+		} else {
+			t.Log("git-secrets agent health check passed")
+		}
+
+		// Test agent version info
+		versionInfo := gitSecretsAgent.GetVersion()
+		assert.Equal(t, "1.0.0", versionInfo.AgentVersion)
+		assert.NotEmpty(t, versionInfo.BuildDate)
+	})
 }
