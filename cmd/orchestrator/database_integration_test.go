@@ -104,6 +104,7 @@ func TestRegisterAgentsFunction(t *testing.T) {
 		"govulncheck",
 		"trufflehog",
 		"git-secrets",
+		"zap",
 	}
 
 	for _, expectedAgent := range expectedAgents {

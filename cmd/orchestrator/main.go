@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agentscan/agentscan/agents/dast/zap"
 	"github.com/agentscan/agentscan/agents/sast/bandit"
 	"github.com/agentscan/agentscan/agents/sast/eslint"
 	"github.com/agentscan/agentscan/agents/sast/semgrep"
@@ -162,6 +163,13 @@ func registerAgents(agentManager *orchestrator.AgentManager) error {
 		return err
 	}
 	log.Println("Registered git-secrets secret scanning agent")
+
+	// Register DAST agents
+	zapAgent := zap.NewAgent()
+	if err := agentManager.RegisterAgent("zap", zapAgent); err != nil {
+		return err
+	}
+	log.Println("Registered OWASP ZAP DAST agent")
 
 	return nil
 }

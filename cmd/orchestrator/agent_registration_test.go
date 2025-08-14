@@ -30,6 +30,7 @@ func TestRegisterAgents(t *testing.T) {
 		"govulncheck",
 		"trufflehog",
 		"git-secrets",
+		"zap",
 	}
 
 	for _, agentName := range expectedAgents {
