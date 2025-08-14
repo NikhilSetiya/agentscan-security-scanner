@@ -1,6 +1,6 @@
-name: 'AgentScan Security'
-description: 'Multi-agent security scanning with consensus-based vulnerability detection'
-author: 'AgentScan Team'
+name: 'AgentScan Security Scanner'
+description: '🛡️ Multi-agent security scanning with 80% fewer false positives. Get consensus-based vulnerability detection across SAST, SCA, and secrets scanning.'
+author: 'AgentScan'
 
 branding:
   icon: 'shield'

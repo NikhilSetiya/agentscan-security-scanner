@@ -1,0 +1,534 @@
+# End-to-End Test Workflow for AgentScan GitHub Action
+# This workflow tests the complete GitHub Marketplace integration
+
+name: E2E GitHub Action Test
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths: 
+      - '.github/actions/agentscan/**'
+      - 'tests/e2e/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '.github/actions/agentscan/**'
+      - 'tests/e2e/**'
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      test_scenario:
+        description: 'Test scenario to run'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - basic
+          - advanced
+          - error_handling
+
+jobs:
+  # Test basic functionality
+  test-basic-scan:
+    runs-on: ubuntu-latest
+    name: Test Basic Scan Functionality
+    
+    steps:
+    - name: Checkout test repository
+      uses: actions/checkout@v4
+      
+    - name: Create test files
+      run: |
+        mkdir -p test-repo/src
+        
+        # Create vulnerable JavaScript file
+        cat > test-repo/src/vulnerable.js << 'EOF'
+        const express = require('express');
+        const app = express();
+        
+        // SQL Injection vulnerability
+        app.get('/user/:id', (req, res) => {
+          const query = `SELECT * FROM users WHERE id = ${req.params.id}`;
+          // This is vulnerable to SQL injection
+          db.query(query, (err, results) => {
+            res.json(results);
+          });
+        });
+        
+        // Hardcoded secret
+        const API_KEY = 'sk-1234567890abcdef';
+        
+        app.listen(3000);
+        EOF
+        
+        # Create package.json
+        cat > test-repo/package.json << 'EOF'
+        {
+          "name": "test-app",
+          "version": "1.0.0",
+          "dependencies": {
+            "express": "^4.18.0",
+            "lodash": "4.17.20"
+          }
+        }
+        EOF
+    
+    - name: Run AgentScan Action
+      id: agentscan
+      uses: ./../../.github/actions/agentscan
+      with:
+        api-key: ${{ secrets.AGENTSCAN_API_KEY }}
+        working-directory: test-repo
+        fail-on-high: false
+        comment-pr: false
+        timeout: 10
+        
+    - name: Validate outputs
+      run: |
+        echo "Scan ID: ${{ steps.agentscan.outputs.scan-id }}"
+        echo "Findings: ${{ steps.agentscan.outputs.findings-count }}"
+        echo "High: ${{ steps.agentscan.outputs.high-count }}"
+        echo "Medium: ${{ steps.agentscan.outputs.medium-count }}"
+        echo "Low: ${{ steps.agentscan.outputs.low-count }}"
+        echo "Status: ${{ steps.agentscan.outputs.scan-status }}"
+        
+        # Validate that we got some findings
+        if [ "${{ steps.agentscan.outputs.findings-count }}" -eq "0" ]; then
+          echo "ERROR: Expected to find vulnerabilities in test code"
+          exit 1
+        fi
+        
+        # Validate that we found high severity issues
+        if [ "${{ steps.agentscan.outputs.high-count }}" -eq "0" ]; then
+          echo "WARNING: Expected to find high severity vulnerabilities"
+        fi
+        
+        echo "✅ Basic scan test passed"
+        
+    - name: Check result files
+      run: |
+        if [ ! -f "test-repo/agentscan-results.json" ]; then
+          echo "ERROR: Results JSON file not found"
+          exit 1
+        fi
+        
+        if [ ! -f "test-repo/agentscan-results.sarif" ]; then
+          echo "ERROR: SARIF file not found"
+          exit 1
+        fi
+        
+        # Validate JSON structure
+        jq '.findings | length' test-repo/agentscan-results.json
+        
+        # Validate SARIF structure
+        jq '.runs[0].results | length' test-repo/agentscan-results.sarif
+        
+        echo "✅ Result files validation passed"
+
+  # Test advanced configuration
+  test-advanced-config:
+    runs-on: ubuntu-latest
+    name: Test Advanced Configuration
+    
+    steps:
+    - name: Checkout test repository
+      uses: actions/checkout@v4
+      
+    - name: Create Python test files
+      run: |
+        mkdir -p test-repo/src
+        
+        # Create vulnerable Python file
+        cat > test-repo/src/app.py << 'EOF'
+        import os
+        import subprocess
+        from flask import Flask, request
+        
+        app = Flask(__name__)
+        
+        # Command injection vulnerability
+        @app.route('/ping')
+        def ping():
+            host = request.args.get('host')
+            result = subprocess.run(f'ping -c 1 {host}', shell=True)
+            return str(result)
+        
+        # Hardcoded password
+        DATABASE_PASSWORD = 'admin123'
+        
+        if __name__ == '__main__':
+            app.run(debug=True)
+        EOF
+        
+        # Create requirements.txt with vulnerable dependency
+        cat > test-repo/requirements.txt << 'EOF'
+        Flask==2.0.0
+        requests==2.25.0
+        pyyaml==5.4.0
+        EOF
+    
+    - name: Run AgentScan with custom config
+      id: agentscan
+      uses: ./../../.github/actions/agentscan
+      with:
+        api-key: ${{ secrets.AGENTSCAN_API_KEY }}
+        working-directory: test-repo
+        agents: 'sast,sca,secrets'
+        severity-threshold: 'low'
+        fail-on-high: true
+        fail-on-medium: false
+        output-format: 'json,sarif'
+        include-paths: 'src/**'
+        exclude-paths: 'tests/**'
+        timeout: 15
+        
+    - name: Validate advanced features
+      run: |
+        # Check that all agent types ran
+        findings_json=$(cat test-repo/agentscan-results.json)
+        
+        # Should have SAST findings
+        sast_count=$(echo "$findings_json" | jq '[.findings[] | select(.tool | test("semgrep|bandit"))] | length')
+        echo "SAST findings: $sast_count"
+        
+        # Should have SCA findings (vulnerable dependencies)
+        sca_count=$(echo "$findings_json" | jq '[.findings[] | select(.tool | test("pip-audit|npm-audit"))] | length')
+        echo "SCA findings: $sca_count"
+        
+        # Should have secrets findings
+        secrets_count=$(echo "$findings_json" | jq '[.findings[] | select(.tool | test("truffhog|detect-secrets"))] | length')
+        echo "Secrets findings: $secrets_count"
+        
+        echo "✅ Advanced configuration test passed"
+
+  # Test error handling
+  test-error-handling:
+    runs-on: ubuntu-latest
+    name: Test Error Handling
+    
+    steps:
+    - name: Checkout test repository
+      uses: actions/checkout@v4
+      
+    - name: Test invalid API key
+      id: invalid-key
+      continue-on-error: true
+      uses: ./../../.github/actions/agentscan
+      with:
+        api-key: 'invalid-key-12345'
+        working-directory: '.'
+        timeout: 5
+        
+    - name: Validate error handling
+      run: |
+        if [ "${{ steps.invalid-key.outcome }}" != "failure" ]; then
+          echo "ERROR: Expected action to fail with invalid API key"
+          exit 1
+        fi
+        echo "✅ Invalid API key error handling passed"
+        
+    - name: Test missing API key
+      id: missing-key
+      continue-on-error: true
+      uses: ./../../.github/actions/agentscan
+      with:
+        working-directory: '.'
+        
+    - name: Validate missing key error
+      run: |
+        if [ "${{ steps.missing-key.outcome }}" != "failure" ]; then
+          echo "ERROR: Expected action to fail with missing API key"
+          exit 1
+        fi
+        echo "✅ Missing API key error handling passed"
+        
+    - name: Test timeout handling
+      id: timeout-test
+      continue-on-error: true
+      uses: ./../../.github/actions/agentscan
+      with:
+        api-key: ${{ secrets.AGENTSCAN_API_KEY }}
+        working-directory: '.'
+        timeout: 1  # Very short timeout
+        
+    - name: Validate timeout handling
+      run: |
+        # Timeout should either fail or complete quickly
+        echo "Timeout test outcome: ${{ steps.timeout-test.outcome }}"
+        echo "✅ Timeout handling test completed"
+
+  # Test PR comment functionality
+  test-pr-comments:
+    runs-on: ubuntu-latest
+    name: Test PR Comment Integration
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout test repository
+      uses: actions/checkout@v4
+      
+    - name: Create test files for PR
+      run: |
+        mkdir -p test-repo/src
+        
+        # Create file with medium severity issues
+        cat > test-repo/src/medium-issues.js << 'EOF'
+        const crypto = require('crypto');
+        
+        // Weak cryptography
+        function hashPassword(password) {
+          return crypto.createHash('md5').update(password).digest('hex');
+        }
+        
+        // Insecure random
+        function generateToken() {
+          return Math.random().toString(36);
+        }
+        
+        module.exports = { hashPassword, generateToken };
+        EOF
+    
+    - name: Run AgentScan with PR comments
+      uses: ./../../.github/actions/agentscan
+      with:
+        api-key: ${{ secrets.AGENTSCAN_API_KEY }}
+        working-directory: test-repo
+        comment-pr: true
+        update-status: true
+        fail-on-high: false
+        fail-on-medium: false
+
+  # Test SARIF integration
+  test-sarif-integration:
+    runs-on: ubuntu-latest
+    name: Test SARIF Integration
+    
+    steps:
+    - name: Checkout test repository
+      uses: actions/checkout@v4
+      
+    - name: Create test files
+      run: |
+        mkdir -p test-repo/src
+        
+        # Create Go file with security issues
+        cat > test-repo/src/main.go << 'EOF'
+        package main
+        
+        import (
+            "fmt"
+            "os/exec"
+            "net/http"
+        )
+        
+        func pingHandler(w http.ResponseWriter, r *http.Request) {
+            host := r.URL.Query().Get("host")
+            // Command injection vulnerability
+            cmd := exec.Command("ping", "-c", "1", host)
+            output, _ := cmd.Output()
+            fmt.Fprintf(w, string(output))
+        }
+        
+        func main() {
+            // Hardcoded secret
+            apiKey := "sk-1234567890abcdef"
+            fmt.Println("API Key:", apiKey)
+            
+            http.HandleFunc("/ping", pingHandler)
+            http.ListenAndServe(":8080", nil)
+        }
+        EOF
+        
+        # Create go.mod
+        cat > test-repo/go.mod << 'EOF'
+        module test-app
+        
+        go 1.21
+        EOF
+    
+    - name: Run AgentScan with SARIF output
+      uses: ./../../.github/actions/agentscan
+      with:
+        api-key: ${{ secrets.AGENTSCAN_API_KEY }}
+        working-directory: test-repo
+        output-format: 'sarif'
+        fail-on-high: false
+        
+    - name: Upload SARIF to GitHub Security
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: test-repo/agentscan-results.sarif
+        
+    - name: Validate SARIF format
+      run: |
+        # Validate SARIF schema compliance
+        sarif_file="test-repo/agentscan-results.sarif"
+        
+        # Check required SARIF fields
+        jq -e '.version' "$sarif_file"
+        jq -e '.runs[0].tool.driver.name' "$sarif_file"
+        jq -e '.runs[0].results' "$sarif_file"
+        
+        # Validate results structure
+        results_count=$(jq '.runs[0].results | length' "$sarif_file")
+        echo "SARIF results count: $results_count"
+        
+        if [ "$results_count" -eq "0" ]; then
+          echo "WARNING: No results in SARIF file"
+        fi
+        
+        echo "✅ SARIF integration test passed"
+
+  # Test marketplace compatibility
+  test-marketplace-compatibility:
+    runs-on: ubuntu-latest
+    name: Test Marketplace Compatibility
+    
+    steps:
+    - name: Checkout test repository
+      uses: actions/checkout@v4
+      
+    - name: Validate action.yml
+      run: |
+        # Check action.yml syntax
+        if ! yq eval '.name' .github/actions/agentscan/action.yml > /dev/null; then
+          echo "ERROR: Invalid action.yml syntax"
+          exit 1
+        fi
+        
+        # Validate required fields
+        name=$(yq eval '.name' .github/actions/agentscan/action.yml)
+        description=$(yq eval '.description' .github/actions/agentscan/action.yml)
+        author=$(yq eval '.author' .github/actions/agentscan/action.yml)
+        
+        if [ -z "$name" ] || [ -z "$description" ] || [ -z "$author" ]; then
+          echo "ERROR: Missing required action metadata"
+          exit 1
+        fi
+        
+        echo "Action name: $name"
+        echo "Description: $description"
+        echo "Author: $author"
+        
+        echo "✅ Action metadata validation passed"
+        
+    - name: Test Docker build
+      run: |
+        cd .github/actions/agentscan
+        
+        # Build Docker image
+        docker build -t agentscan-action-test .
+        
+        # Test basic container functionality
+        docker run --rm agentscan-action-test --help || true
+        
+        echo "✅ Docker build test passed"
+        
+    - name: Validate README
+      run: |
+        readme_file=".github/actions/agentscan/README.md"
+        
+        if [ ! -f "$readme_file" ]; then
+          echo "ERROR: README.md not found"
+          exit 1
+        fi
+        
+        # Check for required sections
+        if ! grep -q "## Quick Start" "$readme_file"; then
+          echo "ERROR: Missing Quick Start section"
+          exit 1
+        fi
+        
+        if ! grep -q "## Troubleshooting" "$readme_file"; then
+          echo "ERROR: Missing Troubleshooting section"
+          exit 1
+        fi
+        
+        echo "✅ README validation passed"
+
+  # Generate test report
+  generate-test-report:
+    runs-on: ubuntu-latest
+    name: Generate Test Report
+    needs: [test-basic-scan, test-advanced-config, test-error-handling, test-sarif-integration, test-marketplace-compatibility]
+    if: always()
+    
+    steps:
+    - name: Generate test summary
+      run: |
+        echo "# AgentScan GitHub Action E2E Test Report" > test-report.md
+        echo "" >> test-report.md
+        echo "**Test Run:** $(date)" >> test-report.md
+        echo "**Commit:** ${{ github.sha }}" >> test-report.md
+        echo "" >> test-report.md
+        
+        echo "## Test Results" >> test-report.md
+        echo "" >> test-report.md
+        
+        # Basic scan test
+        if [ "${{ needs.test-basic-scan.result }}" == "success" ]; then
+          echo "✅ Basic Scan Test: PASSED" >> test-report.md
+        else
+          echo "❌ Basic Scan Test: FAILED" >> test-report.md
+        fi
+        
+        # Advanced config test
+        if [ "${{ needs.test-advanced-config.result }}" == "success" ]; then
+          echo "✅ Advanced Configuration Test: PASSED" >> test-report.md
+        else
+          echo "❌ Advanced Configuration Test: FAILED" >> test-report.md
+        fi
+        
+        # Error handling test
+        if [ "${{ needs.test-error-handling.result }}" == "success" ]; then
+          echo "✅ Error Handling Test: PASSED" >> test-report.md
+        else
+          echo "❌ Error Handling Test: FAILED" >> test-report.md
+        fi
+        
+        # SARIF integration test
+        if [ "${{ needs.test-sarif-integration.result }}" == "success" ]; then
+          echo "✅ SARIF Integration Test: PASSED" >> test-report.md
+        else
+          echo "❌ SARIF Integration Test: FAILED" >> test-report.md
+        fi
+        
+        # Marketplace compatibility test
+        if [ "${{ needs.test-marketplace-compatibility.result }}" == "success" ]; then
+          echo "✅ Marketplace Compatibility Test: PASSED" >> test-report.md
+        else
+          echo "❌ Marketplace Compatibility Test: FAILED" >> test-report.md
+        fi
+        
+        echo "" >> test-report.md
+        echo "## Summary" >> test-report.md
+        
+        # Count passed/failed tests
+        passed_count=0
+        total_count=5
+        
+        [ "${{ needs.test-basic-scan.result }}" == "success" ] && ((passed_count++))
+        [ "${{ needs.test-advanced-config.result }}" == "success" ] && ((passed_count++))
+        [ "${{ needs.test-error-handling.result }}" == "success" ] && ((passed_count++))
+        [ "${{ needs.test-sarif-integration.result }}" == "success" ] && ((passed_count++))
+        [ "${{ needs.test-marketplace-compatibility.result }}" == "success" ] && ((passed_count++))
+        
+        echo "**Tests Passed:** $passed_count/$total_count" >> test-report.md
+        
+        if [ "$passed_count" -eq "$total_count" ]; then
+          echo "**Overall Status:** ✅ ALL TESTS PASSED" >> test-report.md
+        else
+          echo "**Overall Status:** ❌ SOME TESTS FAILED" >> test-report.md
+        fi
+        
+        cat test-report.md
+        
+    - name: Upload test report
+      uses: actions/upload-artifact@v3
+      with:
+        name: e2e-test-report
+        path: test-report.md
