@@ -33,9 +33,17 @@ class WebSocketClient {
     constructor(config, diagnosticsManager) {
         this.ws = null;
         this.reconnectAttempts = 0;
-        this.maxReconnectAttempts = 5;
+        this.maxReconnectAttempts = 10;
         this.reconnectDelay = 1000; // Start with 1 second
+        this.maxReconnectDelay = 30000; // Max 30 seconds
         this.isConnecting = false;
+        this.isDisposed = false;
+        this.heartbeatInterval = null;
+        this.connectionTimeout = null;
+        this.offlineMode = false;
+        this.messageQueue = [];
+        this.lastPingTime = 0;
+        this.connectionQuality = 'offline';
         this.config = config;
         this.diagnosticsManager = diagnosticsManager;
         this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
@@ -43,64 +51,160 @@ class WebSocketClient {
         this.statusBarItem.show();
     }
     async connect() {
-        if (this.isConnecting || (this.ws && this.ws.readyState === ws_1.default.OPEN)) {
+        if (this.isDisposed || this.isConnecting || (this.ws && this.ws.readyState === ws_1.default.OPEN)) {
             return;
         }
         this.isConnecting = true;
+        this.clearTimeouts();
         const wsUrl = this.config.getWebSocketUrl();
         const apiKey = this.config.getApiKey();
+        // Set connection timeout
+        this.connectionTimeout = setTimeout(() => {
+            if (this.isConnecting) {
+                console.log('WebSocket connection timeout');
+                this.handleConnectionFailure('Connection timeout');
+            }
+        }, 10000); // 10 second timeout
         try {
             this.ws = new ws_1.default(wsUrl, {
                 headers: {
                     'Authorization': `Bearer ${apiKey}`,
                     'User-Agent': 'AgentScan-VSCode-Extension/0.1.0'
-                }
+                },
+                handshakeTimeout: 10000
             });
             this.ws.on('open', () => {
                 console.log('WebSocket connected to AgentScan server');
-                this.isConnecting = false;
-                this.reconnectAttempts = 0;
-                this.reconnectDelay = 1000;
-                this.updateStatusBar('connected');
-                // Send initial message to identify the client
-                this.send({
-                    type: 'client_info',
-                    data: {
-                        clientType: 'vscode-extension',
-                        version: '0.1.0',
-                        workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
-                    }
-                });
+                this.handleConnectionSuccess();
             });
             this.ws.on('message', (data) => {
-                try {
-                    const message = JSON.parse(data.toString());
-                    this.handleMessage(message);
-                }
-                catch (error) {
-                    console.error('Failed to parse WebSocket message:', error);
-                }
+                this.handleIncomingMessage(data);
             });
             this.ws.on('close', (code, reason) => {
                 console.log(`WebSocket connection closed: ${code} - ${reason}`);
-                this.isConnecting = false;
-                this.updateStatusBar('disconnected');
-                this.scheduleReconnect();
+                this.handleConnectionClose(code, reason);
             });
             this.ws.on('error', (error) => {
                 console.error('WebSocket error:', error);
-                this.isConnecting = false;
-                this.updateStatusBar('error');
-                if (this.reconnectAttempts === 0) {
-                    vscode.window.showWarningMessage('AgentScan: Failed to connect to server for real-time updates. Retrying...');
-                }
+                this.handleConnectionError(error);
+            });
+            this.ws.on('pong', () => {
+                this.handlePong();
             });
         }
         catch (error) {
             console.error('Failed to create WebSocket connection:', error);
-            this.isConnecting = false;
-            this.updateStatusBar('error');
-            this.scheduleReconnect();
+            this.handleConnectionFailure(error instanceof Error ? error.message : 'Unknown error');
+        }
+    }
+    handleConnectionSuccess() {
+        this.clearTimeouts();
+        this.isConnecting = false;
+        this.reconnectAttempts = 0;
+        this.reconnectDelay = 1000;
+        this.offlineMode = false;
+        this.connectionQuality = 'excellent';
+        this.updateStatusBar('connected');
+        // Start heartbeat
+        this.startHeartbeat();
+        // Send initial message to identify the client
+        this.send({
+            type: 'client_info',
+            data: {
+                clientType: 'vscode-extension',
+                version: '0.1.0',
+                workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+                capabilities: ['real-time-scanning', 'file-watching', 'progress-updates']
+            }
+        });
+        // Send queued messages
+        this.flushMessageQueue();
+        // Show connection restored message if we were previously offline
+        if (this.reconnectAttempts > 0) {
+            vscode.window.showInformationMessage('AgentScan: Connection restored');
+        }
+    }
+    handleConnectionClose(code, reason) {
+        this.clearTimeouts();
+        this.isConnecting = false;
+        // Don't reconnect if this was an intentional disconnect
+        if (this.isDisposed || code === 1000) {
+            this.updateStatusBar('disconnected');
+            return;
+        }
+        this.connectionQuality = 'offline';
+        this.updateStatusBar('disconnected');
+        this.scheduleReconnect();
+    }
+    handleConnectionError(error) {
+        this.clearTimeouts();
+        this.isConnecting = false;
+        this.connectionQuality = 'poor';
+        this.updateStatusBar('error');
+        if (this.reconnectAttempts === 0) {
+            vscode.window.showWarningMessage('AgentScan: Failed to connect to server for real-time updates. Working in offline mode.');
+        }
+        this.handleConnectionFailure(error.message);
+    }
+    handleConnectionFailure(reason) {
+        this.clearTimeouts();
+        this.isConnecting = false;
+        this.offlineMode = true;
+        this.connectionQuality = 'offline';
+        this.updateStatusBar('error');
+        this.scheduleReconnect();
+    }
+    handleIncomingMessage(data) {
+        try {
+            const message = JSON.parse(data.toString());
+            // Handle ping/pong for connection quality monitoring
+            if (message.type === 'pong') {
+                this.handlePong();
+                return;
+            }
+            this.handleMessage(message);
+        }
+        catch (error) {
+            console.error('Failed to parse WebSocket message:', error);
+        }
+    }
+    startHeartbeat() {
+        this.stopHeartbeat();
+        this.heartbeatInterval = setInterval(() => {
+            if (this.ws && this.ws.readyState === ws_1.default.OPEN) {
+                this.lastPingTime = Date.now();
+                this.ws.ping();
+                // Send periodic ping message
+                this.send({
+                    type: 'ping',
+                    data: { timestamp: this.lastPingTime }
+                });
+            }
+        }, 30000); // Ping every 30 seconds
+    }
+    stopHeartbeat() {
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+            this.heartbeatInterval = null;
+        }
+    }
+    handlePong() {
+        const latency = Date.now() - this.lastPingTime;
+        // Update connection quality based on latency
+        if (latency < 100) {
+            this.connectionQuality = 'excellent';
+        }
+        else if (latency < 500) {
+            this.connectionQuality = 'good';
+        }
+        else {
+            this.connectionQuality = 'poor';
+        }
+    }
+    clearTimeouts() {
+        if (this.connectionTimeout) {
+            clearTimeout(this.connectionTimeout);
+            this.connectionTimeout = null;
         }
     }
     handleMessage(message) {
@@ -185,25 +289,75 @@ class WebSocketClient {
     }
     send(message) {
         if (this.ws && this.ws.readyState === ws_1.default.OPEN) {
-            this.ws.send(JSON.stringify(message));
+            try {
+                this.ws.send(JSON.stringify(message));
+                return true;
+            }
+            catch (error) {
+                console.error('Failed to send WebSocket message:', error);
+                this.queueMessage(message);
+                return false;
+            }
+        }
+        else {
+            // Queue message for later if we're offline
+            this.queueMessage(message);
+            return false;
         }
     }
+    queueMessage(message) {
+        // Only queue certain types of messages
+        if (message.type === 'scan_request' || message.type === 'client_info') {
+            this.messageQueue.push({
+                ...message,
+                queuedAt: Date.now()
+            });
+            // Limit queue size
+            if (this.messageQueue.length > 50) {
+                this.messageQueue.shift();
+            }
+        }
+    }
+    flushMessageQueue() {
+        const now = Date.now();
+        const validMessages = this.messageQueue.filter(msg => now - msg.queuedAt < 300000 // Only send messages queued within last 5 minutes
+        );
+        for (const message of validMessages) {
+            const { queuedAt, ...messageToSend } = message;
+            this.send(messageToSend);
+        }
+        this.messageQueue = [];
+    }
     scheduleReconnect() {
+        if (this.isDisposed) {
+            return;
+        }
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-            console.log('Max reconnection attempts reached');
+            console.log('Max reconnection attempts reached, entering offline mode');
+            this.offlineMode = true;
             this.updateStatusBar('failed');
-            vscode.window.showErrorMessage('AgentScan: Failed to connect to server after multiple attempts. Please check your configuration.');
+            // Show a less intrusive message for offline mode
+            vscode.window.setStatusBarMessage('AgentScan: Working in offline mode. Real-time features unavailable.', 10000);
+            // Schedule a retry after a longer delay
+            setTimeout(() => {
+                if (!this.isDisposed) {
+                    this.reconnectAttempts = 0;
+                    this.reconnectDelay = 1000;
+                    this.connect();
+                }
+            }, 300000); // Retry after 5 minutes
             return;
         }
         this.reconnectAttempts++;
         console.log(`Scheduling reconnection attempt ${this.reconnectAttempts} in ${this.reconnectDelay}ms`);
         setTimeout(() => {
-            if (!this.ws || this.ws.readyState !== ws_1.default.OPEN) {
+            if (!this.isDisposed && (!this.ws || this.ws.readyState !== ws_1.default.OPEN)) {
                 this.connect();
             }
         }, this.reconnectDelay);
-        // Exponential backoff with jitter
-        this.reconnectDelay = Math.min(this.reconnectDelay * 2 + Math.random() * 1000, 30000);
+        // Exponential backoff with jitter and max delay
+        const jitter = Math.random() * 1000;
+        this.reconnectDelay = Math.min(this.reconnectDelay * 1.5 + jitter, this.maxReconnectDelay);
     }
     updateStatusBar(status) {
         switch (status) {
@@ -234,12 +388,16 @@ class WebSocketClient {
         }
     }
     disconnect() {
+        this.isDisposed = true;
+        this.clearTimeouts();
+        this.stopHeartbeat();
         if (this.ws) {
-            this.ws.close();
+            this.ws.close(1000, 'Client disconnect');
             this.ws = null;
         }
         this.isConnecting = false;
         this.reconnectAttempts = this.maxReconnectAttempts; // Prevent reconnection
+        this.messageQueue = [];
         this.updateStatusBar('disconnected');
     }
     dispose() {
@@ -248,6 +406,33 @@ class WebSocketClient {
     }
     isConnected() {
         return this.ws !== null && this.ws.readyState === ws_1.default.OPEN;
+    }
+    isOffline() {
+        return this.offlineMode;
+    }
+    getConnectionQuality() {
+        return this.connectionQuality;
+    }
+    getConnectionStats() {
+        return {
+            isConnected: this.isConnected(),
+            isOffline: this.offlineMode,
+            reconnectAttempts: this.reconnectAttempts,
+            queuedMessages: this.messageQueue.length,
+            connectionQuality: this.connectionQuality
+        };
+    }
+    // Force reconnection (useful for manual retry)
+    forceReconnect() {
+        this.reconnectAttempts = 0;
+        this.reconnectDelay = 1000;
+        this.offlineMode = false;
+        if (this.ws) {
+            this.ws.close();
+        }
+        setTimeout(() => {
+            this.connect();
+        }, 1000);
     }
 }
 exports.WebSocketClient = WebSocketClient;

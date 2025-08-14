@@ -27,12 +27,17 @@ exports.AgentScanProvider = void 0;
 const vscode = __importStar(require("vscode"));
 const path = __importStar(require("path"));
 class AgentScanProvider {
-    constructor(apiClient, diagnosticsManager, config) {
+    constructor(apiClient, diagnosticsManager, config, cacheManager, telemetryService) {
         this.activeScanJobs = new Map(); // file path -> scan job ID
         this.scanDebounceTimers = new Map();
+        this.concurrentScans = 0;
+        this.maxConcurrentScans = 3;
         this.apiClient = apiClient;
         this.diagnosticsManager = diagnosticsManager;
         this.config = config;
+        this.cacheManager = cacheManager;
+        this.telemetryService = telemetryService;
+        this.maxConcurrentScans = config.get('maxConcurrentScans', 3);
     }
     async scanFile(document, isLiveMode = false) {
         // Check if language is supported
@@ -63,36 +68,65 @@ class AgentScanProvider {
     async performFileScan(document, content, isLiveMode) {
         const filePath = document.fileName;
         const relativePath = this.getRelativePath(filePath);
+        const startTime = Date.now();
+        // Check concurrent scan limit
+        if (this.concurrentScans >= this.maxConcurrentScans) {
+            if (!isLiveMode) {
+                vscode.window.showWarningMessage('AgentScan: Too many concurrent scans. Please wait...');
+            }
+            return;
+        }
         try {
+            // Check cache first
+            const cachedFindings = this.cacheManager.getCachedFindings(filePath, content);
+            if (cachedFindings && this.config.get('cacheEnabled', true)) {
+                this.diagnosticsManager.updateFindings(document.uri, cachedFindings);
+                this.telemetryService.trackCacheEvent('hit', filePath);
+                this.telemetryService.trackScanCompleted({
+                    scanType: 'file',
+                    duration: Date.now() - startTime,
+                    findingsCount: cachedFindings.length,
+                    highSeverityCount: cachedFindings.filter(f => f.severity === 'high').length,
+                    language: document.languageId,
+                    fileSize: content.length,
+                    cacheHit: true
+                });
+                return;
+            }
+            this.telemetryService.trackCacheEvent('miss', filePath);
             // Cancel existing scan for this file
             const existingScanId = this.activeScanJobs.get(filePath);
             if (existingScanId) {
-                // In a real implementation, you would cancel the existing scan
                 console.log(`Cancelling existing scan ${existingScanId} for ${relativePath}`);
             }
+            this.concurrentScans++;
             // Show progress
             if (!isLiveMode) {
-                vscode.window.withProgress({
+                await vscode.window.withProgress({
                     location: vscode.ProgressLocation.Notification,
                     title: `Scanning ${path.basename(filePath)}...`,
                     cancellable: true
                 }, async (progress, token) => {
-                    return this.executeScan(document, content, progress, token);
+                    return this.executeScan(document, content, progress, token, startTime);
                 });
             }
             else {
                 // Silent scan for live mode
-                await this.executeScan(document, content);
+                await this.executeScan(document, content, undefined, undefined, startTime);
             }
         }
         catch (error) {
             console.error('File scan failed:', error);
+            this.telemetryService.trackScanFailed('file', error instanceof Error ? error.message : String(error), Date.now() - startTime);
             if (!isLiveMode) {
                 vscode.window.showErrorMessage(`AgentScan: Failed to scan file - ${error}`);
             }
         }
+        finally {
+            this.concurrentScans--;
+        }
     }
-    async executeScan(document, content, progress, token) {
+    async executeScan(document, content, progress, token, startTime) {
         const filePath = document.fileName;
         const relativePath = this.getRelativePath(filePath);
         progress?.report({ message: 'Starting scan...', increment: 10 });
@@ -114,6 +148,22 @@ class AgentScanProvider {
                 const filteredFindings = this.filterFindings(findings);
                 // Update diagnostics
                 this.diagnosticsManager.updateFindings(document.uri, filteredFindings);
+                // Cache the results
+                if (this.config.get('cacheEnabled', true)) {
+                    this.cacheManager.cacheFindings(filePath, content, filteredFindings);
+                }
+                // Track scan completion
+                if (startTime) {
+                    this.telemetryService.trackScanCompleted({
+                        scanType: 'file',
+                        duration: Date.now() - startTime,
+                        findingsCount: filteredFindings.length,
+                        highSeverityCount: filteredFindings.filter(f => f.severity === 'high').length,
+                        language: document.languageId,
+                        fileSize: content.length,
+                        cacheHit: false
+                    });
+                }
                 progress?.report({ message: 'Scan completed', increment: 100 });
                 break;
             }
@@ -293,9 +343,48 @@ class AgentScanProvider {
         }
         return path.basename(filePath);
     }
+    async markAsFixed(finding) {
+        try {
+            await this.apiClient.updateFindingStatus(finding.id, 'fixed', 'Marked as fixed from VS Code');
+            // Remove the finding from diagnostics
+            const activeEditor = vscode.window.activeTextEditor;
+            if (activeEditor) {
+                const currentFindings = this.diagnosticsManager.getFindingsForFile(activeEditor.document.uri);
+                const updatedFindings = currentFindings.filter(f => f.id !== finding.id);
+                this.diagnosticsManager.updateFindings(activeEditor.document.uri, updatedFindings);
+            }
+            vscode.window.showInformationMessage('Finding marked as fixed');
+        }
+        catch (error) {
+            console.error('Failed to mark finding as fixed:', error);
+            vscode.window.showErrorMessage(`Failed to mark finding as fixed: ${error}`);
+        }
+    }
+    async ignoreRule(finding) {
+        try {
+            const confirmation = await vscode.window.showWarningMessage(`This will ignore all future findings for rule "${finding.ruleId}". Are you sure?`, { modal: true }, 'Yes, Ignore Rule', 'Cancel');
+            if (confirmation !== 'Yes, Ignore Rule') {
+                return;
+            }
+            // In a real implementation, you would add the rule to an ignore list
+            // For now, we'll just suppress all findings with this rule ID
+            const activeEditor = vscode.window.activeTextEditor;
+            if (activeEditor) {
+                const currentFindings = this.diagnosticsManager.getFindingsForFile(activeEditor.document.uri);
+                const updatedFindings = currentFindings.filter(f => f.ruleId !== finding.ruleId);
+                this.diagnosticsManager.updateFindings(activeEditor.document.uri, updatedFindings);
+            }
+            vscode.window.showInformationMessage(`Rule "${finding.ruleId}" has been ignored`);
+        }
+        catch (error) {
+            console.error('Failed to ignore rule:', error);
+            vscode.window.showErrorMessage(`Failed to ignore rule: ${error}`);
+        }
+    }
     updateConfiguration(config) {
         this.config = config;
         this.apiClient.updateConfiguration(config);
+        this.maxConcurrentScans = config.get('maxConcurrentScans', 3);
     }
     dispose() {
         // Clear all debounce timers

@@ -62,18 +62,104 @@
         "title": "Suppress Finding",
         "category": "AgentScan",
         "icon": "$(eye-closed)"
+      },
+      {
+        "command": "agentscan.markAsFixed",
+        "title": "Mark as Fixed",
+        "category": "AgentScan",
+        "icon": "$(check)"
+      },
+      {
+        "command": "agentscan.ignoreRule",
+        "title": "Ignore Rule",
+        "category": "AgentScan",
+        "icon": "$(exclude)"
+      },
+      {
+        "command": "agentscan.learnMore",
+        "title": "Learn More",
+        "category": "AgentScan",
+        "icon": "$(info)"
+      },
+      {
+        "command": "agentscan.nextFinding",
+        "title": "Go to Next Finding",
+        "category": "AgentScan",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "agentscan.previousFinding",
+        "title": "Go to Previous Finding",
+        "category": "AgentScan",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "agentscan.toggleRealTimeScanning",
+        "title": "Toggle Real-time Scanning",
+        "category": "AgentScan",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "agentscan.showSecurityHealth",
+        "title": "Show Security Health",
+        "category": "AgentScan",
+        "icon": "$(pulse)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "agentscan.scanFile",
+        "key": "ctrl+shift+s",
+        "mac": "cmd+shift+s",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "agentscan.nextFinding",
+        "key": "f8",
+        "when": "agentscan.hasFindings"
+      },
+      {
+        "command": "agentscan.previousFinding",
+        "key": "shift+f8",
+        "when": "agentscan.hasFindings"
+      },
+      {
+        "command": "agentscan.suppressFinding",
+        "key": "ctrl+shift+i",
+        "mac": "cmd+shift+i",
+        "when": "agentscan.hasFinding"
+      },
+      {
+        "command": "agentscan.toggleRealTimeScanning",
+        "key": "ctrl+shift+t",
+        "mac": "cmd+shift+t"
       }
     ],
     "menus": {
       "editor/context": [
         {
           "command": "agentscan.scanFile",
-          "group": "agentscan",
+          "group": "agentscan@1",
           "when": "resourceExtname =~ /\\.(js|ts|py|go|java)$/"
         },
         {
           "command": "agentscan.suppressFinding",
-          "group": "agentscan",
+          "group": "agentscan@2",
+          "when": "agentscan.hasFinding"
+        },
+        {
+          "command": "agentscan.markAsFixed",
+          "group": "agentscan@3",
+          "when": "agentscan.hasFinding"
+        },
+        {
+          "command": "agentscan.ignoreRule",
+          "group": "agentscan@4",
+          "when": "agentscan.hasFinding"
+        },
+        {
+          "command": "agentscan.learnMore",
+          "group": "agentscan@5",
           "when": "agentscan.hasFinding"
         }
       ],
@@ -92,6 +178,14 @@
         {
           "command": "agentscan.scanWorkspace",
           "when": "workspaceFolderCount > 0"
+        },
+        {
+          "command": "agentscan.nextFinding",
+          "when": "agentscan.hasFindings"
+        },
+        {
+          "command": "agentscan.previousFinding",
+          "when": "agentscan.hasFindings"
         }
       ]
     },
@@ -156,6 +250,31 @@
           "type": "boolean",
           "default": true,
           "description": "Enable WebSocket connection for real-time updates"
+        },
+        "agentscan.cacheEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable caching for faster scan results"
+        },
+        "agentscan.cacheMaxAge": {
+          "type": "number",
+          "default": 300,
+          "description": "Cache expiration time in seconds"
+        },
+        "agentscan.enableTelemetry": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable telemetry and crash reporting"
+        },
+        "agentscan.maxConcurrentScans": {
+          "type": "number",
+          "default": 3,
+          "description": "Maximum number of concurrent file scans"
+        },
+        "agentscan.showSecurityHealth": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show security health indicator in status bar"
         }
       }
     },
@@ -197,7 +316,10 @@
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
     "package": "vsce package",
-    "publish": "vsce publish"
+    "publish": "vsce publish",
+    "build": "npm run compile",
+    "clean": "rimraf out",
+    "rebuild": "npm run clean && npm run compile"
   },
   "devDependencies": {
     "@types/vscode": "^1.74.0",

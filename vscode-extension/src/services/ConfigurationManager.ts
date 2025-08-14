@@ -60,6 +60,10 @@ export class ConfigurationManager {
         return `${wsUrl}/ws`;
     }
 
+    get<T>(key: string, defaultValue: T): T {
+        return this.config.get<T>(key, defaultValue);
+    }
+
     async updateConfiguration(key: string, value: any, target?: vscode.ConfigurationTarget) {
         await this.config.update(key, value, target || vscode.ConfigurationTarget.Workspace);
         this.refresh();

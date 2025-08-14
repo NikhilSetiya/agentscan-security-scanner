@@ -69,6 +69,9 @@ class ConfigurationManager {
         const wsUrl = serverUrl.replace(/^https?:\/\//, 'ws://').replace(/^http:\/\//, 'ws://').replace(/^https:\/\//, 'wss://');
         return `${wsUrl}/ws`;
     }
+    get(key, defaultValue) {
+        return this.config.get(key, defaultValue);
+    }
     async updateConfiguration(key, value, target) {
         await this.config.update(key, value, target || vscode.ConfigurationTarget.Workspace);
         this.refresh();
