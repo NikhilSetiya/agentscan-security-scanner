@@ -7,7 +7,8 @@ AgentScan is an intelligent security scanner that orchestrates multiple scanning
 - **Multi-Agent Consensus**: Runs multiple security tools in parallel and uses consensus scoring to reduce false positives by 80%
 - **Language Support**: JavaScript/TypeScript, Python, Go, Java, C#, Ruby, PHP, Rust
 - **Fast Performance**: Full repository scans in under 5 minutes, incremental scans in under 30 seconds
-- **Developer Integration**: VS Code extension, GitHub/GitLab integration, CI/CD plugins
+- **Enhanced VS Code Extension**: Real-time developer feedback with sub-2-second response times, intelligent caching, rich hover tooltips, and keyboard navigation
+- **Developer Integration**: GitHub/GitLab integration, CI/CD plugins, comprehensive IDE support
 - **Clean UI**: Modern dashboard inspired by Linear, Vercel, and Superhuman
 
 ## Architecture
@@ -64,6 +65,16 @@ go run cmd/orchestrator/main.go
 ```
 
 The API will be available at `http://localhost:8080` and the web UI at `http://localhost:3000`.
+
+### VS Code Extension
+
+Install the AgentScan Security extension from the VS Code marketplace or install the packaged extension:
+
+```bash
+code --install-extension vscode-extension/agentscan-security-0.1.0.vsix
+```
+
+Configure the extension with your AgentScan server URL and API key in VS Code settings.
 
 ## Configuration
 

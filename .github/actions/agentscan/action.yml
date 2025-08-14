@@ -1,0 +1,160 @@
+name: 'AgentScan Security'
+description: 'Multi-agent security scanning with consensus-based vulnerability detection'
+author: 'AgentScan Team'
+
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  api-key:
+    description: 'AgentScan API key for authentication'
+    required: true
+  
+  api-url:
+    description: 'AgentScan API URL'
+    required: false
+    default: 'https://api.agentscan.dev'
+  
+  repository-url:
+    description: 'Repository URL to scan (auto-detected if not provided)'
+    required: false
+  
+  branch:
+    description: 'Branch to scan (auto-detected if not provided)'
+    required: false
+  
+  scan-type:
+    description: 'Type of scan to perform'
+    required: false
+    default: 'incremental'
+    # Options: full, incremental, pr
+  
+  fail-on-high:
+    description: 'Fail the build on high severity findings'
+    required: false
+    default: 'true'
+  
+  fail-on-medium:
+    description: 'Fail the build on medium severity findings'
+    required: false
+    default: 'false'
+  
+  fail-on-low:
+    description: 'Fail the build on low severity findings'
+    required: false
+    default: 'false'
+  
+  comment-pr:
+    description: 'Add scan results as PR comment'
+    required: false
+    default: 'true'
+  
+  update-status:
+    description: 'Update GitHub status checks'
+    required: false
+    default: 'true'
+  
+  output-format:
+    description: 'Output format for results'
+    required: false
+    default: 'json'
+    # Options: json, sarif, junit
+  
+  output-file:
+    description: 'Output file path for results'
+    required: false
+    default: 'agentscan-results.json'
+  
+  config-file:
+    description: 'Path to AgentScan configuration file'
+    required: false
+    default: '.agentscan/config.yml'
+  
+  timeout:
+    description: 'Scan timeout in minutes'
+    required: false
+    default: '15'
+  
+  agents:
+    description: 'Comma-separated list of agents to run'
+    required: false
+    default: 'sast,sca,secrets'
+    # Options: sast,sca,secrets,dast
+  
+  severity-threshold:
+    description: 'Minimum severity level to report'
+    required: false
+    default: 'medium'
+    # Options: low, medium, high
+  
+  include-paths:
+    description: 'Comma-separated list of paths to include'
+    required: false
+  
+  exclude-paths:
+    description: 'Comma-separated list of paths to exclude'
+    required: false
+  
+  working-directory:
+    description: 'Working directory for the scan'
+    required: false
+    default: '.'
+
+outputs:
+  scan-id:
+    description: 'Unique identifier for the scan'
+  
+  findings-count:
+    description: 'Total number of findings'
+  
+  high-count:
+    description: 'Number of high severity findings'
+  
+  medium-count:
+    description: 'Number of medium severity findings'
+  
+  low-count:
+    description: 'Number of low severity findings'
+  
+  scan-status:
+    description: 'Final scan status (passed, failed, error)'
+  
+  results-url:
+    description: 'URL to view detailed results'
+  
+  sarif-file:
+    description: 'Path to SARIF results file'
+
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+  env:
+    AGENTSCAN_API_KEY: ${{ inputs.api-key }}
+    AGENTSCAN_API_URL: ${{ inputs.api-url }}
+    REPOSITORY_URL: ${{ inputs.repository-url }}
+    BRANCH: ${{ inputs.branch }}
+    SCAN_TYPE: ${{ inputs.scan-type }}
+    FAIL_ON_HIGH: ${{ inputs.fail-on-high }}
+    FAIL_ON_MEDIUM: ${{ inputs.fail-on-medium }}
+    FAIL_ON_LOW: ${{ inputs.fail-on-low }}
+    COMMENT_PR: ${{ inputs.comment-pr }}
+    UPDATE_STATUS: ${{ inputs.update-status }}
+    OUTPUT_FORMAT: ${{ inputs.output-format }}
+    OUTPUT_FILE: ${{ inputs.output-file }}
+    CONFIG_FILE: ${{ inputs.config-file }}
+    TIMEOUT: ${{ inputs.timeout }}
+    AGENTS: ${{ inputs.agents }}
+    SEVERITY_THRESHOLD: ${{ inputs.severity-threshold }}
+    INCLUDE_PATHS: ${{ inputs.include-paths }}
+    EXCLUDE_PATHS: ${{ inputs.exclude-paths }}
+    WORKING_DIRECTORY: ${{ inputs.working-directory }}
+    GITHUB_TOKEN: ${{ github.token }}
+    GITHUB_REPOSITORY: ${{ github.repository }}
+    GITHUB_REF: ${{ github.ref }}
+    GITHUB_SHA: ${{ github.sha }}
+    GITHUB_EVENT_NAME: ${{ github.event_name }}
+    GITHUB_EVENT_PATH: ${{ github.event_path }}
+    GITHUB_WORKSPACE: ${{ github.workspace }}
+    GITHUB_RUN_ID: ${{ github.run_id }}
+    GITHUB_RUN_NUMBER: ${{ github.run_number }}

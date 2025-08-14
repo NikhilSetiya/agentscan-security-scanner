@@ -1,0 +1,277 @@
+name: agentscan-production
+region: nyc1
+
+services:
+  # API Server
+  - name: api-server
+    source_dir: /
+    github:
+      repo: NikhilSetiya/agentscan-security-scanner
+      branch: main
+      deploy_on_push: true
+    build_command: |
+      cd cmd/api && go build -o api-server .
+    run_command: ./cmd/api/api-server
+    environment_slug: go
+    instance_count: 2
+    instance_size_slug: basic-xxs
+    http_port: 8080
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 30
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
+    envs:
+      - key: PORT
+        value: "8080"
+      - key: DB_HOST
+        value: ${db.HOSTNAME}
+      - key: DB_PORT
+        value: ${db.PORT}
+      - key: DB_NAME
+        value: ${db.DATABASE}
+      - key: DB_USER
+        value: ${db.USERNAME}
+      - key: DB_PASSWORD
+        value: ${db.PASSWORD}
+      - key: REDIS_HOST
+        value: ${redis.HOSTNAME}
+      - key: REDIS_PORT
+        value: ${redis.PORT}
+      - key: REDIS_PASSWORD
+        value: ${redis.PASSWORD}
+      - key: JWT_SECRET
+        value: ${JWT_SECRET}
+        type: SECRET
+      - key: GITHUB_CLIENT_ID
+        value: ${GITHUB_CLIENT_ID}
+        type: SECRET
+      - key: GITHUB_SECRET
+        value: ${GITHUB_SECRET}
+        type: SECRET
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: AGENTS_MAX_CONCURRENT
+        value: "20"
+      - key: AGENTS_DEFAULT_TIMEOUT
+        value: "15m"
+      - key: AGENTS_MAX_MEMORY_MB
+        value: "2048"
+
+  # Orchestrator Service
+  - name: orchestrator
+    source_dir: /
+    github:
+      repo: NikhilSetiya/agentscan-security-scanner
+      branch: main
+      deploy_on_push: true
+    build_command: |
+      cd cmd/orchestrator && go build -o orchestrator .
+    run_command: ./cmd/orchestrator/orchestrator
+    environment_slug: go
+    instance_count: 1
+    instance_size_slug: basic-xs
+    envs:
+      - key: DB_HOST
+        value: ${db.HOSTNAME}
+      - key: DB_PORT
+        value: ${db.PORT}
+      - key: DB_NAME
+        value: ${db.DATABASE}
+      - key: DB_USER
+        value: ${db.USERNAME}
+      - key: DB_PASSWORD
+        value: ${db.PASSWORD}
+      - key: REDIS_HOST
+        value: ${redis.HOSTNAME}
+      - key: REDIS_PORT
+        value: ${redis.PORT}
+      - key: REDIS_PASSWORD
+        value: ${redis.PASSWORD}
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: AGENTS_MAX_CONCURRENT
+        value: "20"
+      - key: AGENTS_DEFAULT_TIMEOUT
+        value: "15m"
+      - key: AGENTS_MAX_MEMORY_MB
+        value: "2048"
+
+  # Web Frontend
+  - name: web-frontend
+    source_dir: /web/frontend
+    github:
+      repo: NikhilSetiya/agentscan-security-scanner
+      branch: main
+      deploy_on_push: true
+    build_command: |
+      npm ci
+      npm run build
+    run_command: npm start
+    environment_slug: node-js
+    instance_count: 2
+    instance_size_slug: basic-xxs
+    http_port: 3000
+    health_check:
+      http_path: /
+      initial_delay_seconds: 30
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL
+        value: https://agentscan-production-api-server.ondigitalocean.app
+      - key: NEXT_PUBLIC_WS_URL
+        value: wss://agentscan-production-api-server.ondigitalocean.app
+
+databases:
+  - name: db
+    engine: PG
+    version: "15"
+    size: basic-xs
+    num_nodes: 1
+    production: true
+
+  - name: redis
+    engine: REDIS
+    version: "7"
+    size: basic-xs
+    num_nodes: 1
+    production: true
+
+# Static sites for documentation
+static_sites:
+  - name: docs
+    source_dir: /docs
+    github:
+      repo: NikhilSetiya/agentscan-security-scanner
+      branch: main
+      deploy_on_push: true
+    build_command: |
+      if [ -f package.json ]; then
+        npm ci
+        npm run build
+      else
+        mkdir -p _site
+        cp -r . _site/
+      fi
+    output_dir: _site
+    index_document: index.html
+    error_document: 404.html
+
+# Workers for background jobs
+workers:
+  - name: scan-worker
+    source_dir: /
+    github:
+      repo: NikhilSetiya/agentscan-security-scanner
+      branch: main
+      deploy_on_push: true
+    build_command: |
+      cd cmd/worker && go build -o scan-worker .
+    run_command: ./cmd/worker/scan-worker
+    environment_slug: go
+    instance_count: 3
+    instance_size_slug: basic-s
+    envs:
+      - key: DB_HOST
+        value: ${db.HOSTNAME}
+      - key: DB_PORT
+        value: ${db.PORT}
+      - key: DB_NAME
+        value: ${db.DATABASE}
+      - key: DB_USER
+        value: ${db.USERNAME}
+      - key: DB_PASSWORD
+        value: ${db.PASSWORD}
+      - key: REDIS_HOST
+        value: ${redis.HOSTNAME}
+      - key: REDIS_PORT
+        value: ${redis.PORT}
+      - key: REDIS_PASSWORD
+        value: ${redis.PASSWORD}
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: WORKER_TYPE
+        value: scan
+      - key: AGENTS_MAX_CONCURRENT
+        value: "10"
+      - key: AGENTS_DEFAULT_TIMEOUT
+        value: "15m"
+      - key: AGENTS_MAX_MEMORY_MB
+        value: "2048"
+
+# Jobs for one-time tasks
+jobs:
+  - name: migrate
+    source_dir: /
+    github:
+      repo: NikhilSetiya/agentscan-security-scanner
+      branch: main
+    build_command: |
+      cd cmd/migrate && go build -o migrate .
+    run_command: ./cmd/migrate/migrate up
+    environment_slug: go
+    instance_size_slug: basic-xxs
+    kind: PRE_DEPLOY
+    envs:
+      - key: DB_HOST
+        value: ${db.HOSTNAME}
+      - key: DB_PORT
+        value: ${db.PORT}
+      - key: DB_NAME
+        value: ${db.DATABASE}
+      - key: DB_USER
+        value: ${db.USERNAME}
+      - key: DB_PASSWORD
+        value: ${db.PASSWORD}
+
+# Alerts and monitoring
+alerts:
+  - rule: CPU_UTILIZATION
+    disabled: false
+    value: 80
+    operator: GREATER_THAN
+    window: FIVE_MINUTES
+    
+  - rule: MEM_UTILIZATION
+    disabled: false
+    value: 85
+    operator: GREATER_THAN
+    window: FIVE_MINUTES
+    
+  - rule: RESTART_COUNT
+    disabled: false
+    value: 5
+    operator: GREATER_THAN
+    window: FIVE_MINUTES
+
+# Domain configuration
+domains:
+  - domain: agentscan.dev
+    type: PRIMARY
+    wildcard: false
+    zone: agentscan.dev
+  - domain: api.agentscan.dev
+    type: ALIAS
+    wildcard: false
+    zone: agentscan.dev
+  - domain: app.agentscan.dev
+    type: ALIAS
+    wildcard: false
+    zone: agentscan.dev
+  - domain: docs.agentscan.dev
+    type: ALIAS
+    wildcard: false
+    zone: agentscan.dev
