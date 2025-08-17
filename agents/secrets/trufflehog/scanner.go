@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/agentscan/agentscan/pkg/agent"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/agent"
 )
 
 // TruffleHogResult represents the JSON output from TruffleHog

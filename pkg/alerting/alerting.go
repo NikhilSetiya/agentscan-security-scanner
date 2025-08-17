@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentscan/agentscan/pkg/logging"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/logging"
 )
 
 // Severity represents alert severity levels

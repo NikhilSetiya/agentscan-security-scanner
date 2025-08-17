@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/agentscan/agentscan/pkg/agent"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/agent"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

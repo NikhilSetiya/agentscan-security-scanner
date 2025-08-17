@@ -10,7 +10,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/agentscan/agentscan/internal/notifications"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/notifications"
 )
 
 // EmailHandler implements notification sending via email

@@ -7,8 +7,8 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/agentscan/agentscan/pkg/errors"
-	"github.com/agentscan/agentscan/pkg/logging"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/errors"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/logging"
 )
 
 // RetryConfig holds configuration for retry logic

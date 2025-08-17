@@ -1,0 +1,38 @@
+name: agentscan-production
+region: nyc1
+
+services:
+  - name: api
+    source_dir: /
+    github:
+      repo: NikhilSetiya/agentscan-security-scanner
+      branch: main
+      deploy_on_push: true
+    build_command: |
+      cd cmd/api && go build -o api-server .
+    run_command: ./cmd/api/api-server
+    environment_slug: go
+    instance_count: 1
+    instance_size_slug: basic-xs
+    http_port: 8080
+    envs:
+      - key: PORT
+        value: "8080"
+      - key: JWT_SECRET
+        value: ${JWT_SECRET}
+        type: SECRET
+      - key: GITHUB_CLIENT_ID
+        value: ${GITHUB_CLIENT_ID}
+        type: SECRET
+      - key: GITHUB_SECRET
+        value: ${GITHUB_SECRET}
+        type: SECRET
+      - key: ENVIRONMENT
+        value: production
+
+databases:
+  - name: db
+    engine: PG
+    version: "15"
+    size: basic-xs
+    num_nodes: 1

@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/agentscan/agentscan/pkg/logging"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/logging"
 )
 
 // AuditEventType represents the type of audit event

@@ -7,8 +7,8 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/agentscan/agentscan/pkg/config"
-	"github.com/agentscan/agentscan/pkg/errors"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/config"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/errors"
 )
 
 // RedisClient wraps the Redis client with additional functionality

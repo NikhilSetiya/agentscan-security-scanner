@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/agentscan/agentscan/internal/database"
-	"github.com/agentscan/agentscan/internal/queue"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/database"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/queue"
 )
 
 // HealthHandler handles health check requests

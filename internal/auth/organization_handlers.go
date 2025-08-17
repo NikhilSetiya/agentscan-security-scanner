@@ -6,7 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"github.com/agentscan/agentscan/internal/api"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/api"
 )
 
 // OrganizationHandlers provides HTTP handlers for organization management

@@ -5,7 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/agentscan/agentscan/pkg/types"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/types"
 )
 
 // RepositoryAdapter adapts the Repositories struct to implement the Repository interface

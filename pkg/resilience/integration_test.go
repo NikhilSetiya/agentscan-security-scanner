@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	appErrors "github.com/agentscan/agentscan/pkg/errors"
+	appErrors "github.com/NikhilSetiya/agentscan-security-scanner/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

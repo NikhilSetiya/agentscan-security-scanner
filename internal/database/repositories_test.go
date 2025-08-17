@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/agentscan/agentscan/pkg/types"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/types"
 )
 
 // Mock database for testing

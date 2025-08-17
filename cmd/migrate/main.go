@@ -5,8 +5,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/agentscan/agentscan/internal/database"
-	"github.com/agentscan/agentscan/pkg/config"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/database"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/config"
 )
 
 func main() {

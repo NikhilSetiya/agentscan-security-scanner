@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentscan/agentscan/pkg/agent"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/agent"
 )
 
 // ConfidenceCalibrator calibrates confidence scores based on historical accuracy

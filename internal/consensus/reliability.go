@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentscan/agentscan/pkg/agent"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/agent"
 )
 
 // ToolReliabilityScorer tracks and calculates reliability scores for security tools

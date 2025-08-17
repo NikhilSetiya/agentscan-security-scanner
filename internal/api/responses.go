@@ -8,8 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"github.com/agentscan/agentscan/pkg/errors"
-	"github.com/agentscan/agentscan/pkg/types"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/errors"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/types"
 )
 
 // APIResponse represents a standard API response

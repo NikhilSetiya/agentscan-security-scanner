@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
 
-	"github.com/agentscan/agentscan/internal/notifications"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/notifications"
 )
 
 func TestTeamsHandler_Send(t *testing.T) {

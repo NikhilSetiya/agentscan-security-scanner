@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/agentscan/agentscan/pkg/logging"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/logging"
 )
 
 // LoggingMiddleware creates a middleware for request logging with correlation IDs

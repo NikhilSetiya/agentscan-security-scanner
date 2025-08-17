@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentscan/agentscan/pkg/logging"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/logging"
 )
 
 // CircuitState represents the state of the circuit breaker

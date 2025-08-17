@@ -3,13 +3,13 @@ package api
 import (
 	"github.com/gin-gonic/gin"
 
-	"github.com/agentscan/agentscan/internal/database"
-	"github.com/agentscan/agentscan/internal/findings"
-	"github.com/agentscan/agentscan/internal/github"
-	"github.com/agentscan/agentscan/internal/gitlab"
-	"github.com/agentscan/agentscan/internal/orchestrator"
-	"github.com/agentscan/agentscan/internal/queue"
-	"github.com/agentscan/agentscan/pkg/config"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/database"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/findings"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/github"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/gitlab"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/orchestrator"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/queue"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/config"
 )
 
 // Router creates and configures the API router

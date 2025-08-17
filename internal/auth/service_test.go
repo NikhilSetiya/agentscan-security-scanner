@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/agentscan/agentscan/internal/database"
-	"github.com/agentscan/agentscan/pkg/config"
-	"github.com/agentscan/agentscan/pkg/types"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/database"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/config"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/types"
 )
 
 // MockUserRepository is a mock implementation of UserRepository

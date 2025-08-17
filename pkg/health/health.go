@@ -10,9 +10,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/agentscan/agentscan/internal/database"
-	"github.com/agentscan/agentscan/internal/queue"
-	"github.com/agentscan/agentscan/pkg/logging"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/database"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/queue"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/logging"
 )
 
 // Status represents the health status of a component

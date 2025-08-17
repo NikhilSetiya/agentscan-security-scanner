@@ -10,8 +10,8 @@ import (
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq" // PostgreSQL driver
 
-	"github.com/agentscan/agentscan/pkg/config"
-	"github.com/agentscan/agentscan/pkg/errors"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/config"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/errors"
 )
 
 // DB wraps the database connection with additional functionality

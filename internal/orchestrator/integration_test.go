@@ -11,14 +11,14 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/agentscan/agentscan/agents/sast/bandit"
-	"github.com/agentscan/agentscan/agents/sast/eslint"
-	"github.com/agentscan/agentscan/agents/sast/semgrep"
-	"github.com/agentscan/agentscan/agents/secrets/gitsecrets"
-	"github.com/agentscan/agentscan/agents/secrets/trufflehog"
-	"github.com/agentscan/agentscan/internal/queue"
-	"github.com/agentscan/agentscan/pkg/agent"
-	"github.com/agentscan/agentscan/pkg/types"
+	"github.com/NikhilSetiya/agentscan-security-scanner/agents/sast/bandit"
+	"github.com/NikhilSetiya/agentscan-security-scanner/agents/sast/eslint"
+	"github.com/NikhilSetiya/agentscan-security-scanner/agents/sast/semgrep"
+	"github.com/NikhilSetiya/agentscan-security-scanner/agents/secrets/gitsecrets"
+	"github.com/NikhilSetiya/agentscan-security-scanner/agents/secrets/trufflehog"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/queue"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/agent"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/types"
 )
 
 // TestESLintAgentRegistration_Integration tests that ESLint security agent is properly registered and callable

@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/agentscan/agentscan/pkg/errors"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/errors"
 )
 
 // JobHandler defines the interface for handling jobs

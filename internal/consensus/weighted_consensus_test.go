@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/agentscan/agentscan/pkg/agent"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/agent"
 )
 
 func TestEngine_WeightedConsensusScoring(t *testing.T) {

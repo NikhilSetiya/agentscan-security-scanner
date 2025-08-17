@@ -6,8 +6,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/agentscan/agentscan/agents/sast/semgrep"
-	"github.com/agentscan/agentscan/pkg/agent"
+	"github.com/NikhilSetiya/agentscan-security-scanner/agents/sast/semgrep"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/agent"
 )
 
 func main() {

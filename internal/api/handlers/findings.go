@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"github.com/agentscan/agentscan/internal/findings"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/findings"
 )
 
 // FindingsHandler handles HTTP requests for findings management

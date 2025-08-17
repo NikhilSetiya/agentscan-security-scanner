@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentscan/agentscan/pkg/config"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/config"
 )
 
 func TestNewJob(t *testing.T) {

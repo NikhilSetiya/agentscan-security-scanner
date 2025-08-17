@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"github.com/agentscan/agentscan/internal/database"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/database"
 )
 
 // AuditEventType represents the type of audit event

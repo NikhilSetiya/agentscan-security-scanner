@@ -14,11 +14,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/agentscan/agentscan/internal/api"
-	"github.com/agentscan/agentscan/internal/database"
-	"github.com/agentscan/agentscan/internal/orchestrator"
-	"github.com/agentscan/agentscan/internal/queue"
-	"github.com/agentscan/agentscan/pkg/config"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/api"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/database"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/orchestrator"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/queue"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/config"
 )
 
 // LoadTestSuite performs load testing on the AgentScan system

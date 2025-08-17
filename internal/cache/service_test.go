@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/agentscan/agentscan/internal/queue"
-	"github.com/agentscan/agentscan/pkg/config"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/queue"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/config"
 )
 
 func setupTestCache(t *testing.T) *Service {

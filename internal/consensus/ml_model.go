@@ -7,7 +7,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/agentscan/agentscan/pkg/agent"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/agent"
 )
 
 // MLModel defines the interface for machine learning models used in consensus scoring

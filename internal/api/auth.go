@@ -14,9 +14,9 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 
-	"github.com/agentscan/agentscan/internal/database"
-	"github.com/agentscan/agentscan/pkg/config"
-	"github.com/agentscan/agentscan/pkg/types"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/database"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/config"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/types"
 )
 
 // AuthHandler handles authentication endpoints

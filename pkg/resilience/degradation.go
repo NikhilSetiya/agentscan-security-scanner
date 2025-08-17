@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentscan/agentscan/pkg/errors"
-	"github.com/agentscan/agentscan/pkg/logging"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/errors"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/logging"
 )
 
 // DegradationLevel represents the level of service degradation

@@ -15,9 +15,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/agentscan/agentscan/internal/database"
-	"github.com/agentscan/agentscan/internal/orchestrator"
-	"github.com/agentscan/agentscan/pkg/types"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/database"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/orchestrator"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/types"
 )
 
 // WebhookHandler handles GitHub webhook events
@@ -838,7 +838,7 @@ func (h *WebhookHandler) formatPRComment(results *orchestrator.ScanResults, jobI
 	comment.WriteString("---\n")
 	comment.WriteString("📊 **[View Full Report](%s/scans/%s)** | ")
 	comment.WriteString("📖 **[Documentation](https://docs.agentscan.dev)** | ")
-	comment.WriteString("🐛 **[Report Issue](https://github.com/agentscan/agentscan/issues)**\n\n")
+	comment.WriteString("🐛 **[Report Issue](https://github.com/NikhilSetiya/agentscan-security-scanner/issues)**\n\n")
 	comment.WriteString("*🛡️ Secured by [AgentScan](https://agentscan.dev) - Multi-agent security scanning with 80% fewer false positives*\n")
 
 	return fmt.Sprintf(comment.String(), "https://app.agentscan.dev", jobID, "https://app.agentscan.dev", jobID, "https://app.agentscan.dev", jobID)

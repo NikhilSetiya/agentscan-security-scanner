@@ -6,10 +6,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/agentscan/agentscan/internal/benchmark"
-	"github.com/agentscan/agentscan/internal/cache"
-	"github.com/agentscan/agentscan/internal/monitoring"
-	"github.com/agentscan/agentscan/pkg/errors"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/benchmark"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/cache"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/monitoring"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/errors"
 )
 
 // PerformanceHandler handles performance monitoring and benchmarking endpoints

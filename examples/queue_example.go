@@ -6,8 +6,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/agentscan/agentscan/internal/queue"
-	"github.com/agentscan/agentscan/pkg/config"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/queue"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/config"
 )
 
 // ScanJobHandler handles security scan jobs

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentscan/agentscan/agents/secrets/gitsecrets"
-	"github.com/agentscan/agentscan/agents/secrets/trufflehog"
-	"github.com/agentscan/agentscan/pkg/agent"
+	"github.com/NikhilSetiya/agentscan-security-scanner/agents/secrets/gitsecrets"
+	"github.com/NikhilSetiya/agentscan-security-scanner/agents/secrets/trufflehog"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/agent"
 )
 
 // AgentType represents the type of secret scanning agent

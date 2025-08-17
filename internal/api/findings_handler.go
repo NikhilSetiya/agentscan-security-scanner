@@ -3,8 +3,8 @@ package api
 import (
 	"github.com/gin-gonic/gin"
 
-	"github.com/agentscan/agentscan/internal/api/handlers"
-	"github.com/agentscan/agentscan/internal/findings"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/api/handlers"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/findings"
 )
 
 // NewFindingsHandler creates a new findings handler wrapper

@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentscan/agentscan/internal/cache"
-	"github.com/agentscan/agentscan/internal/orchestrator"
-	"github.com/agentscan/agentscan/pkg/errors"
-	"github.com/agentscan/agentscan/pkg/types"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/cache"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/orchestrator"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/errors"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/types"
 )
 
 // Service provides performance benchmarking and load testing capabilities

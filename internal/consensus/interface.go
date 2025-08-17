@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/agentscan/agentscan/pkg/agent"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/agent"
 )
 
 // ConsensusEngine defines the interface for result deduplication and consensus scoring

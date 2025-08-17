@@ -10,17 +10,12 @@ services:
       branch: main
       deploy_on_push: true
     build_command: |
-      go build -o api-server ./cmd/api
-    run_command: ./api-server
+      cd cmd/api && go build -o api-server .
+    run_command: ./cmd/api/api-server
     environment_slug: go
     instance_count: 1
     instance_size_slug: basic-xs
     http_port: 8080
-    routes:
-      - path: /api
-      - path: /health
-      - path: /auth
-      - path: /webhooks
     health_check:
       http_path: /health
       initial_delay_seconds: 30
@@ -75,8 +70,8 @@ services:
       branch: main
       deploy_on_push: true
     build_command: |
-      go build -o orchestrator ./cmd/orchestrator
-    run_command: ./orchestrator
+      cd cmd/orchestrator && go build -o orchestrator .
+    run_command: ./cmd/orchestrator/orchestrator
     environment_slug: go
     instance_count: 1
     instance_size_slug: basic-xs
@@ -108,38 +103,6 @@ services:
       - key: AGENTS_MAX_MEMORY_MB
         value: "2048"
 
-  # Web Frontend
-  - name: web-frontend
-    source_dir: /web/frontend
-    github:
-      repo: NikhilSetiya/agentscan-security-scanner
-      branch: main
-      deploy_on_push: true
-    build_command: |
-      npm ci
-      npm run build
-    run_command: npm start
-    environment_slug: node-js
-    instance_count: 1
-    instance_size_slug: basic-xs
-    http_port: 4173
-    routes:
-      - path: /
-    health_check:
-      http_path: /
-      initial_delay_seconds: 30
-      period_seconds: 10
-      timeout_seconds: 5
-      success_threshold: 1
-      failure_threshold: 3
-    envs:
-      - key: NODE_ENV
-        value: production
-      - key: VITE_API_URL
-        value: https://agentscan-production-api-server.ondigitalocean.app
-      - key: VITE_WS_URL
-        value: wss://agentscan-production-api-server.ondigitalocean.app
-
 databases:
   - name: db
     engine: PG
@@ -154,12 +117,3 @@ databases:
     size: basic-xs
     num_nodes: 1
     production: true
-
-# Static sites can be added later
-
-# Workers and jobs can be added later after initial deployment
-
-# Note: App-level alerts are configured through DigitalOcean dashboard
-# Basic monitoring is included automatically
-
-# Custom domains can be added later through DigitalOcean dashboard

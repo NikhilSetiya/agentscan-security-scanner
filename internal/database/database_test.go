@@ -7,8 +7,8 @@ import (
 
 	"github.com/jmoiron/sqlx"
 
-	"github.com/agentscan/agentscan/pkg/config"
-	"github.com/agentscan/agentscan/pkg/errors"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/config"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/errors"
 )
 
 func TestNew(t *testing.T) {

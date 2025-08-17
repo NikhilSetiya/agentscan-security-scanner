@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentscan/agentscan/pkg/agent"
-	"github.com/agentscan/agentscan/pkg/errors"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/agent"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/errors"
 )
 
 // AgentManager manages the lifecycle of security agents

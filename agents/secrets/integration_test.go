@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentscan/agentscan/agents/secrets/gitsecrets"
-	"github.com/agentscan/agentscan/agents/secrets/trufflehog"
-	"github.com/agentscan/agentscan/pkg/agent"
+	"github.com/NikhilSetiya/agentscan-security-scanner/agents/secrets/gitsecrets"
+	"github.com/NikhilSetiya/agentscan-security-scanner/agents/secrets/trufflehog"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/agent"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentscan/agentscan/internal/cache"
-	"github.com/agentscan/agentscan/internal/database"
-	"github.com/agentscan/agentscan/internal/queue"
-	"github.com/agentscan/agentscan/pkg/errors"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/cache"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/database"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/queue"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/errors"
 )
 
 // Service provides system monitoring and resource tracking

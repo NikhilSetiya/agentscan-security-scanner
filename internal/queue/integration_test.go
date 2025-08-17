@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentscan/agentscan/pkg/config"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/config"
 )
 
 // TestQueueIntegration tests the complete queue system

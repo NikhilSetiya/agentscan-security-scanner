@@ -8,13 +8,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/agentscan/agentscan/internal/database"
-	"github.com/agentscan/agentscan/internal/queue"
-	"github.com/agentscan/agentscan/pkg/alerting"
-	"github.com/agentscan/agentscan/pkg/health"
-	"github.com/agentscan/agentscan/pkg/logging"
-	"github.com/agentscan/agentscan/pkg/metrics"
-	"github.com/agentscan/agentscan/pkg/tracing"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/database"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/queue"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/alerting"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/health"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/logging"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/metrics"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/tracing"
 )
 
 // Service provides comprehensive observability functionality

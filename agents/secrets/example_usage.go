@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/agentscan/agentscan/pkg/agent"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/agent"
 )
 
 // ExampleBasicUsage demonstrates basic usage of secret scanning agents

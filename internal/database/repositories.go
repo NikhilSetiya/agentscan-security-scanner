@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/agentscan/agentscan/pkg/errors"
-	"github.com/agentscan/agentscan/pkg/types"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/errors"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/types"
 )
 
 // UserRepositoryInterface defines the interface for user operations

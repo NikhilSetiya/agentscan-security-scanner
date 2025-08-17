@@ -3,7 +3,7 @@ package github
 import (
 	"testing"
 
-	"github.com/agentscan/agentscan/internal/orchestrator"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/orchestrator"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

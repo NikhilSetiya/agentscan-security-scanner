@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentscan/agentscan/pkg/agent"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/agent"
 )
 
 // WebAppConfig contains configuration for a detected web application

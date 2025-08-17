@@ -8,8 +8,8 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/agentscan/agentscan/internal/queue"
-	"github.com/agentscan/agentscan/pkg/errors"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/queue"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/errors"
 )
 
 // Service provides caching functionality for frequently accessed data

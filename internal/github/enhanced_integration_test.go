@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/agentscan/agentscan/internal/orchestrator"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/orchestrator"
 	"github.com/stretchr/testify/assert"
 )
 

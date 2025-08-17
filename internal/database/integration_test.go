@@ -10,8 +10,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/agentscan/agentscan/pkg/config"
-	"github.com/agentscan/agentscan/pkg/types"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/config"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/types"
 )
 
 // TestDatabaseIntegration tests the complete database functionality

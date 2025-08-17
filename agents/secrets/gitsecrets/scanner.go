@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/agentscan/agentscan/pkg/agent"
+	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/agent"
 )
 
 // GitSecretsResult represents a finding from git-secrets
