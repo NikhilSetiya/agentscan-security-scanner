@@ -72,7 +72,7 @@ func (h *PerformanceHandler) StartLoadTest(c *gin.Context) {
 
 	result, err := h.benchmark.RunLoadTest(c.Request.Context(), &params)
 	if err != nil {
-		if errors.IsValidationError(err) {
+		if errors.IsValidation(err) {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": err.Error(),
 			})
@@ -128,7 +128,7 @@ func (h *PerformanceHandler) StartBenchmark(c *gin.Context) {
 
 	result, err := h.benchmark.RunBenchmark(c.Request.Context(), &params)
 	if err != nil {
-		if errors.IsValidationError(err) {
+		if errors.IsValidation(err) {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": err.Error(),
 			})

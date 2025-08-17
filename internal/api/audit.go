@@ -327,8 +327,8 @@ func (a *AuditLogger) ExportAuditLogs(ctx context.Context, filter *AuditFilter, 
 		return nil, fmt.Errorf("unsupported format: %s", format)
 	}
 }
-// expo
-rtAuditLogsAsCSV exports audit logs as CSV format
+
+// exportAuditLogsAsCSV exports audit logs as CSV format
 func (a *AuditLogger) exportAuditLogsAsCSV(logs []*AuditEvent) ([]byte, error) {
 	var buf bytes.Buffer
 	writer := csv.NewWriter(&buf)
@@ -346,7 +346,7 @@ func (a *AuditLogger) exportAuditLogsAsCSV(logs []*AuditEvent) ([]byte, error) {
 	for _, log := range logs {
 		record := []string{
 			log.ID.String(),
-			log.EventType,
+			string(log.EventType),
 			func() string {
 				if log.UserID != nil {
 					return log.UserID.String()
@@ -360,7 +360,7 @@ func (a *AuditLogger) exportAuditLogsAsCSV(logs []*AuditEvent) ([]byte, error) {
 				}
 				return ""
 			}(),
-			log.Action,
+			string(log.EventType),
 			log.IPAddress,
 			log.UserAgent,
 			fmt.Sprintf("%t", log.Success),

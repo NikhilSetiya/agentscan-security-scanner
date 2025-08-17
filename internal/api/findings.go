@@ -297,6 +297,11 @@ func (h *FindingHandler) ExportFindings(c *gin.Context) {
 		})
 
 	case "csv":
+		findingDTOs := make([]*FindingDTO, len(findings))
+		for i, finding := range findings {
+			findingDTOs[i] = ToFindingDTO(finding)
+		}
+		
 		csvData, err := h.exportFindingsAsCSV(findingDTOs)
 		if err != nil {
 			InternalErrorResponse(c, "Failed to generate CSV export")
@@ -308,6 +313,11 @@ func (h *FindingHandler) ExportFindings(c *gin.Context) {
 		c.Data(http.StatusOK, "text/csv", csvData)
 
 	case "pdf":
+		findingDTOs := make([]*FindingDTO, len(findings))
+		for i, finding := range findings {
+			findingDTOs[i] = ToFindingDTO(finding)
+		}
+		
 		pdfData, err := h.exportFindingsAsPDF(findingDTOs, scanJobID)
 		if err != nil {
 			InternalErrorResponse(c, "Failed to generate PDF export")
@@ -371,9 +381,9 @@ func contains(s, substr string) bool {
 			(s[0:len(substr)] == substr || 
 				(len(s) > len(substr) && contains(s[1:], substr)))))
 }
-// ex
-portFindingsAsCSV exports findings as CSV format
-func (h *FindingHandler) exportFindingsAsCSV(findings []FindingDTO) ([]byte, error) {
+
+// exportFindingsAsCSV exports findings as CSV format
+func (h *FindingHandler) exportFindingsAsCSV(findings []*FindingDTO) ([]byte, error) {
 	var buf bytes.Buffer
 	writer := csv.NewWriter(&buf)
 
@@ -390,17 +400,17 @@ func (h *FindingHandler) exportFindingsAsCSV(findings []FindingDTO) ([]byte, err
 	// Write findings data
 	for _, finding := range findings {
 		record := []string{
-			finding.ID,
+			finding.ID.String(),
 			finding.Tool,
 			finding.RuleID,
 			finding.Severity,
 			finding.Category,
 			finding.Title,
 			finding.Description,
-			finding.File,
-			strconv.Itoa(finding.Line),
-			strconv.Itoa(finding.Column),
-			finding.Confidence,
+			finding.FilePath,
+			strconv.Itoa(finding.LineNumber),
+			strconv.Itoa(finding.ColumnNumber),
+			fmt.Sprintf("%.2f", finding.Confidence),
 			finding.Status,
 			finding.CreatedAt.Format(time.RFC3339),
 			finding.UpdatedAt.Format(time.RFC3339),
@@ -419,7 +429,7 @@ func (h *FindingHandler) exportFindingsAsCSV(findings []FindingDTO) ([]byte, err
 }
 
 // exportFindingsAsPDF exports findings as PDF format
-func (h *FindingHandler) exportFindingsAsPDF(findings []FindingDTO, scanJobID string) ([]byte, error) {
+func (h *FindingHandler) exportFindingsAsPDF(findings []*FindingDTO, scanJobID string) ([]byte, error) {
 	// TODO: Implement proper PDF generation using a PDF library like gofpdf
 	// For now, return a simple text-based PDF placeholder
 	
@@ -432,7 +442,7 @@ func (h *FindingHandler) exportFindingsAsPDF(findings []FindingDTO, scanJobID st
 	content += fmt.Sprintf("Total Findings: %d\n\n", len(findings))
 	
 	// Group findings by severity
-	severityGroups := make(map[string][]FindingDTO)
+	severityGroups := make(map[string][]*FindingDTO)
 	for _, finding := range findings {
 		severityGroups[finding.Severity] = append(severityGroups[finding.Severity], finding)
 	}
@@ -451,7 +461,7 @@ func (h *FindingHandler) exportFindingsAsPDF(findings []FindingDTO, scanJobID st
 					break
 				}
 				content += fmt.Sprintf("%d. %s\n", i+1, finding.Title)
-				content += fmt.Sprintf("   File: %s:%d\n", finding.File, finding.Line)
+				content += fmt.Sprintf("   File: %s:%d\n", finding.FilePath, finding.LineNumber)
 				content += fmt.Sprintf("   Tool: %s\n", finding.Tool)
 				content += fmt.Sprintf("   Description: %s\n\n", finding.Description)
 			}

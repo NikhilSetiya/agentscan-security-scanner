@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -59,7 +60,7 @@ func NewAgentResultHandler(repos *database.Repositories, orchestrator orchestrat
 func (h *AgentResultHandler) SubmitResults(c *gin.Context) {
 	var req AgentResultSubmissionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		ValidationErrorResponse(c, err)
+		BadRequestResponse(c, "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -96,11 +97,9 @@ func (h *AgentResultHandler) SubmitResults(c *gin.Context) {
 		AgentName:     req.AgentName,
 		Status:        req.Status,
 		FindingsCount: len(req.Findings),
-		DurationMS:    req.Duration,
+		DurationMS:    int(req.Duration),
 		ErrorMessage:  req.ErrorMessage,
-		Metadata:      req.Metadata,
 		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
 	}
 
 	// Store scan result
@@ -111,6 +110,28 @@ func (h *AgentResultHandler) SubmitResults(c *gin.Context) {
 
 	// Store findings
 	for _, findingReq := range req.Findings {
+		// Convert confidence string to float64
+		confidence := 0.0
+		if findingReq.Confidence != "" {
+			// Simple conversion - in production you'd want better parsing
+			switch findingReq.Confidence {
+			case "high":
+				confidence = 0.9
+			case "medium":
+				confidence = 0.7
+			case "low":
+				confidence = 0.5
+			default:
+				confidence = 0.5
+			}
+		}
+
+		// Convert fix suggestion string to map
+		fixSuggestion := make(map[string]interface{})
+		if findingReq.FixSuggestion != "" {
+			fixSuggestion["suggestion"] = findingReq.FixSuggestion
+		}
+
 		finding := &types.Finding{
 			ID:            uuid.New(),
 			ScanResultID:  scanResult.ID,
@@ -125,13 +146,11 @@ func (h *AgentResultHandler) SubmitResults(c *gin.Context) {
 			LineNumber:    findingReq.LineNumber,
 			ColumnNumber:  findingReq.ColumnNumber,
 			CodeSnippet:   findingReq.CodeSnippet,
-			Confidence:    findingReq.Confidence,
+			Confidence:    confidence,
 			Status:        "open", // Default status for new findings
-			FixSuggestion: findingReq.FixSuggestion,
+			FixSuggestion: fixSuggestion,
 			References:    findingReq.References,
-			Metadata:      findingReq.Metadata,
 			CreatedAt:     time.Now(),
-			UpdatedAt:     time.Now(),
 		}
 
 		if err := h.repos.Findings.Create(c.Request.Context(), finding); err != nil {
