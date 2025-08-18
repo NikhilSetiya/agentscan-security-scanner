@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/NikhilSetiya/agentscan-security-scanner/internal/orchestrator"
 	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/types"
 )
 

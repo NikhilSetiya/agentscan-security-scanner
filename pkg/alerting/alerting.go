@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/logging"
 )
 
@@ -167,7 +168,7 @@ func (s *Service) TriggerAlert(ctx context.Context, alert *Alert) error {
 	s.activeAlerts[alert.ID] = alert
 
 	// Log the alert
-	s.logger.WithContext(ctx).WithFields(logging.Fields{
+	s.logger.WithContext(ctx).WithFields(logrus.Fields{
 		"alert_id":    alert.ID,
 		"title":       alert.Title,
 		"severity":    alert.Severity,
@@ -196,7 +197,7 @@ func (s *Service) ResolveAlert(ctx context.Context, alertID string) error {
 	alert.ResolvedAt = &now
 
 	// Log resolution
-	s.logger.WithContext(ctx).WithFields(logging.Fields{
+	s.logger.WithContext(ctx).WithFields(logrus.Fields{
 		"alert_id":  alert.ID,
 		"title":     alert.Title,
 		"component": alert.Component,
@@ -244,7 +245,7 @@ func (s *Service) sendNotifications(ctx context.Context, alert *Alert) {
 	for _, channel := range channels {
 		go func(ch NotificationChannel) {
 			if err := ch.Send(ctx, alert); err != nil {
-				s.logger.WithContext(ctx).WithError(err).WithFields(logging.Fields{
+				s.logger.WithContext(ctx).WithError(err).WithFields(logrus.Fields{
 					"channel":   ch.Name(),
 					"alert_id":  alert.ID,
 				}).Error("Failed to send alert notification")

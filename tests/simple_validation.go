@@ -1,3 +1,6 @@
+//go:build validation
+// +build validation
+
 package main
 
 import (

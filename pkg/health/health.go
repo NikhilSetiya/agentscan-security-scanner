@@ -2,7 +2,6 @@ package health
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"net/http"
 	"sync"

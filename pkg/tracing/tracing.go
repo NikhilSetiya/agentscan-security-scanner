@@ -327,7 +327,7 @@ func (ts *TracingService) TraceableFunction(ctx context.Context, name string, fn
 }
 
 // TraceableFunctionWithResult wraps a function with tracing and returns a result
-func (ts *TracingService) TraceableFunctionWithResult[T any](ctx context.Context, name string, fn func(ctx context.Context) (T, error)) (T, error) {
+func (ts *TracingService) TraceableFunctionWithResult(ctx context.Context, name string, fn func(ctx context.Context) (interface{}, error)) (interface{}, error) {
 	ctx, span := ts.StartSpan(ctx, name)
 	defer span.End()
 
