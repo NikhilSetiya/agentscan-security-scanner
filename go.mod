@@ -1,7 +1,6 @@
 module github.com/NikhilSetiya/agentscan-security-scanner
 
-go 1.23
-
+go 1.21
 
 require (
 	github.com/gin-contrib/cors v1.7.6
@@ -26,7 +25,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.37.0
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.39.0
-	golang.org/x/oauth2 v0.30.0
+	golang.org/x/oauth2 v0.18.0
 )
 
 require (
