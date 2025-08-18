@@ -1,1 +1,1 @@
-web: ./bin/api
+web: ./bin/agentscan-security-scanner

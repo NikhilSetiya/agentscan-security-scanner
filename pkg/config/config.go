@@ -91,7 +91,7 @@ func Load() (*Config, error) {
 	config := &Config{
 		Server: ServerConfig{
 			Host:         getEnvString("SERVER_HOST", "0.0.0.0"),
-			Port:         getEnvInt("SERVER_PORT", 8080),
+			Port:         getEnvIntWithFallback([]string{"PORT", "SERVER_PORT"}, 8080),
 			ReadTimeout:  getEnvDuration("SERVER_READ_TIMEOUT", 30*time.Second),
 			WriteTimeout: getEnvDuration("SERVER_WRITE_TIMEOUT", 30*time.Second),
 			IdleTimeout:  getEnvDuration("SERVER_IDLE_TIMEOUT", 120*time.Second),
@@ -247,6 +247,18 @@ func getEnvBool(key string, defaultValue bool) bool {
 	if value := os.Getenv(key); value != "" {
 		if boolValue, err := strconv.ParseBool(value); err == nil {
 			return boolValue
+		}
+	}
+	return defaultValue
+}
+
+// getEnvIntWithFallback tries multiple environment variables in order
+func getEnvIntWithFallback(keys []string, defaultValue int) int {
+	for _, key := range keys {
+		if value := os.Getenv(key); value != "" {
+			if intValue, err := strconv.Atoi(value); err == nil {
+				return intValue
+			}
 		}
 	}
 	return defaultValue
