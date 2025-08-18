@@ -287,7 +287,7 @@ Based on similar %s projects, you can expect:
 ### 🔧 Getting Started
 1. Merge this PR to enable security scanning
 2. Get your free API key at [agentscan.dev](https://agentscan.dev/signup?utm_source=github&utm_medium=pr&utm_campaign=viral)
-3. Add the API key as a repository secret: `AGENTSCAN_API_KEY`
+3. Add the API key as a repository secret: AGENTSCAN_API_KEY
 4. That's it! Security scans will run automatically
 
 ### 🤝 About This Contribution

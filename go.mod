@@ -1,8 +1,6 @@
 module github.com/NikhilSetiya/agentscan-security-scanner
 
-go 1.23.0
-
-toolchain go1.24.6
+go 1.21
 
 require (
 	github.com/gin-contrib/cors v1.7.6
