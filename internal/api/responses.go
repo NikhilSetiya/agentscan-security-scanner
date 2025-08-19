@@ -1,7 +1,6 @@
 package api
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -23,19 +22,27 @@ type APIResponse struct {
 	Timestamp time.Time   `json:"timestamp"`
 }
 
-// APIError represents an API error
+// APIError represents an API error with enhanced details support
 type APIError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	Details string `json:"details,omitempty"`
+	Code    string                 `json:"code"`
+	Message string                 `json:"message"`
+	Details map[string]interface{} `json:"details,omitempty"`
 }
 
-// Meta represents response metadata
+// Meta represents response metadata with enhanced pagination support
 type Meta struct {
-	Page       int   `json:"page,omitempty"`
-	PageSize   int   `json:"page_size,omitempty"`
-	Total      int64 `json:"total,omitempty"`
-	TotalPages int   `json:"total_pages,omitempty"`
+	Pagination *Pagination `json:"pagination,omitempty"`
+	Timestamp  time.Time   `json:"timestamp"`
+}
+
+// Pagination represents pagination metadata
+type Pagination struct {
+	Page       int   `json:"page"`
+	PageSize   int   `json:"page_size"`
+	Total      int64 `json:"total"`
+	TotalPages int   `json:"total_pages"`
+	HasNext    bool  `json:"has_next"`
+	HasPrev    bool  `json:"has_prev"`
 }
 
 // ErrorResponse represents a simple error response
@@ -72,6 +79,11 @@ func SuccessResponseWithMeta(c *gin.Context, data interface{}, meta *Meta) {
 		if id, ok := requestID.(string); ok {
 			requestIDStr = id
 		}
+	}
+	
+	// Ensure meta has timestamp
+	if meta != nil {
+		meta.Timestamp = time.Now()
 	}
 	
 	response := APIResponse{
@@ -144,21 +156,17 @@ func ErrorResponseFromError(c *gin.Context, err error) {
 			Message: e.Message,
 		}
 		
-		// Add details if available
+		// Add details if available - now using map[string]interface{}
 		if len(e.Details) > 0 {
-			detailsStr := ""
+			apiError.Details = make(map[string]interface{})
 			for k, v := range e.Details {
-				if detailsStr != "" {
-					detailsStr += ", "
-				}
-				detailsStr += fmt.Sprintf("%s: %s", k, v)
+				apiError.Details[k] = v
 			}
-			apiError.Details = detailsStr
 		}
 	default:
 		statusCode = http.StatusInternalServerError
 		apiError = &APIError{
-			Code:    "unknown_error",
+			Code:    "UNKNOWN_ERROR",
 			Message: "An unknown error occurred",
 		}
 	}
@@ -186,7 +194,7 @@ func BadRequestResponse(c *gin.Context, message string) {
 	response := APIResponse{
 		Success: false,
 		Error: &APIError{
-			Code:    "bad_request",
+			Code:    "BAD_REQUEST",
 			Message: message,
 		},
 		RequestID: requestIDStr,
@@ -209,7 +217,7 @@ func UnauthorizedResponse(c *gin.Context, message string) {
 	response := APIResponse{
 		Success: false,
 		Error: &APIError{
-			Code:    "unauthorized",
+			Code:    "UNAUTHORIZED",
 			Message: message,
 		},
 		RequestID: requestIDStr,
@@ -232,7 +240,7 @@ func ForbiddenResponse(c *gin.Context, message string) {
 	response := APIResponse{
 		Success: false,
 		Error: &APIError{
-			Code:    "forbidden",
+			Code:    "FORBIDDEN",
 			Message: message,
 		},
 		RequestID: requestIDStr,
@@ -255,7 +263,7 @@ func NotFoundResponse(c *gin.Context, message string) {
 	response := APIResponse{
 		Success: false,
 		Error: &APIError{
-			Code:    "not_found",
+			Code:    "NOT_FOUND",
 			Message: message,
 		},
 		RequestID: requestIDStr,
@@ -278,7 +286,7 @@ func InternalErrorResponse(c *gin.Context, message string) {
 	response := APIResponse{
 		Success: false,
 		Error: &APIError{
-			Code:    "internal_error",
+			Code:    "INTERNAL_ERROR",
 			Message: message,
 		},
 		RequestID: requestIDStr,
@@ -286,6 +294,109 @@ func InternalErrorResponse(c *gin.Context, message string) {
 	}
 	
 	c.JSON(http.StatusInternalServerError, response)
+}
+
+// ValidationErrorResponse sends a 400 Bad Request response with validation details
+func ValidationErrorResponse(c *gin.Context, message string, details map[string]interface{}) {
+	requestID, exists := c.Get("request_id")
+	requestIDStr := ""
+	if exists {
+		if id, ok := requestID.(string); ok {
+			requestIDStr = id
+		}
+	}
+	
+	response := APIResponse{
+		Success: false,
+		Error: &APIError{
+			Code:    "VALIDATION_ERROR",
+			Message: message,
+			Details: details,
+		},
+		RequestID: requestIDStr,
+		Timestamp: time.Now(),
+	}
+	
+	c.JSON(http.StatusBadRequest, response)
+}
+
+// ConflictResponse sends a 409 Conflict response
+func ConflictResponse(c *gin.Context, message string) {
+	requestID, exists := c.Get("request_id")
+	requestIDStr := ""
+	if exists {
+		if id, ok := requestID.(string); ok {
+			requestIDStr = id
+		}
+	}
+	
+	response := APIResponse{
+		Success: false,
+		Error: &APIError{
+			Code:    "CONFLICT",
+			Message: message,
+		},
+		RequestID: requestIDStr,
+		Timestamp: time.Now(),
+	}
+	
+	c.JSON(http.StatusConflict, response)
+}
+
+// TooManyRequestsResponse sends a 429 Too Many Requests response
+func TooManyRequestsResponse(c *gin.Context, message string) {
+	requestID, exists := c.Get("request_id")
+	requestIDStr := ""
+	if exists {
+		if id, ok := requestID.(string); ok {
+			requestIDStr = id
+		}
+	}
+	
+	response := APIResponse{
+		Success: false,
+		Error: &APIError{
+			Code:    "RATE_LIMIT_EXCEEDED",
+			Message: message,
+		},
+		RequestID: requestIDStr,
+		Timestamp: time.Now(),
+	}
+	
+	c.JSON(http.StatusTooManyRequests, response)
+}
+
+// Helper functions for pagination
+
+// NewPagination creates a new pagination metadata object
+func NewPagination(page, pageSize int, total int64) *Pagination {
+	totalPages := int(total) / pageSize
+	if int(total)%pageSize > 0 {
+		totalPages++
+	}
+	
+	return &Pagination{
+		Page:       page,
+		PageSize:   pageSize,
+		Total:      total,
+		TotalPages: totalPages,
+		HasNext:    page < totalPages,
+		HasPrev:    page > 1,
+	}
+}
+
+// NewMetaWithPagination creates a new Meta object with pagination
+func NewMetaWithPagination(page, pageSize int, total int64) *Meta {
+	return &Meta{
+		Pagination: NewPagination(page, pageSize, total),
+		Timestamp:  time.Now(),
+	}
+}
+
+// PaginatedResponse sends a successful response with pagination metadata
+func PaginatedResponse(c *gin.Context, data interface{}, page, pageSize int, total int64) {
+	meta := NewMetaWithPagination(page, pageSize, total)
+	SuccessResponseWithMeta(c, data, meta)
 }
 
 // DTO types for API requests and responses

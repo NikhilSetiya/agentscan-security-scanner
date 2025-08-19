@@ -131,14 +131,7 @@ func (h *FindingHandler) ListFindings(c *gin.Context) {
 		totalPages++
 	}
 
-	meta := &Meta{
-		Page:       page,
-		PageSize:   pageSize,
-		Total:      total,
-		TotalPages: totalPages,
-	}
-
-	SuccessResponseWithMeta(c, findingDTOs, meta)
+	PaginatedResponse(c, findingDTOs, page, pageSize, total)
 }
 
 // UpdateFindingStatus updates the status of a finding

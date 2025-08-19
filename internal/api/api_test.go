@@ -390,7 +390,7 @@ func TestAuthMiddleware_MissingToken(t *testing.T) {
 	require.NoError(t, err)
 	
 	assert.False(t, response.Success)
-	assert.Equal(t, "unauthorized", response.Error.Code)
+	assert.Equal(t, "UNAUTHORIZED", response.Error.Code)
 }
 
 func TestAuthMiddleware_ValidToken(t *testing.T) {
@@ -500,5 +500,5 @@ func TestNotFoundEndpoint(t *testing.T) {
 	require.NoError(t, err)
 	
 	assert.False(t, response.Success)
-	assert.Equal(t, "not_found", response.Error.Code)
+	assert.Equal(t, "NOT_FOUND", response.Error.Code)
 }

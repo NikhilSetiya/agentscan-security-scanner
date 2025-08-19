@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { apiClient, ApiResponse, ApiError } from '../services/api';
+import { apiClient, ApiResponse, ApiError, Pagination } from '../services/api';
 
 // Generic API hook state
 interface ApiState<T> {
@@ -60,8 +60,8 @@ export function useApi<T>(
       if (!mountedRef.current) return;
 
       const apiError: ApiError = {
-        error: error instanceof Error ? error.message : 'Unknown error',
         code: 'UNKNOWN_ERROR',
+        message: error instanceof Error ? error.message : 'Unknown error',
       };
       setState(prev => ({ ...prev, loading: false, error: apiError }));
       onError?.(apiError);
@@ -136,8 +136,8 @@ export function useMutation<TData, TVariables = void>(
       if (!mountedRef.current) return;
 
       const apiError: ApiError = {
-        error: error instanceof Error ? error.message : 'Unknown error',
         code: 'UNKNOWN_ERROR',
+        message: error instanceof Error ? error.message : 'Unknown error',
       };
       setState(prev => ({ ...prev, loading: false, error: apiError }));
       onError?.(apiError);
@@ -167,16 +167,102 @@ export function useDashboardStats() {
   return useApi(() => apiClient.getDashboardStats());
 }
 
+// Enhanced API state with pagination
+interface PaginatedApiState<T> extends ApiState<T> {
+  pagination?: Pagination;
+}
+
+// Paginated API hook
+export function usePaginatedApi<T>(
+  apiCall: () => Promise<ApiResponse<T>>,
+  options: UseApiOptions = {}
+) {
+  const { immediate = true, onSuccess, onError } = options;
+  const [state, setState] = useState<PaginatedApiState<T>>({
+    data: null,
+    loading: false,
+    error: null,
+    pagination: undefined,
+  });
+
+  const mountedRef = useRef(true);
+  const apiCallRef = useRef(apiCall);
+
+  // Update the ref when apiCall changes
+  useEffect(() => {
+    apiCallRef.current = apiCall;
+  });
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const execute = useCallback(async () => {
+    setState(prev => ({ ...prev, loading: true, error: null }));
+
+    try {
+      const response = await apiCallRef.current();
+
+      if (!mountedRef.current) return;
+
+      if (response.error) {
+        setState(prev => ({ ...prev, loading: false, error: response.error! }));
+        onError?.(response.error);
+      } else {
+        setState(prev => ({ 
+          ...prev, 
+          loading: false, 
+          data: response.data!, 
+          pagination: response.meta?.pagination 
+        }));
+        onSuccess?.(response.data);
+      }
+    } catch (error) {
+      if (!mountedRef.current) return;
+
+      const apiError: ApiError = {
+        code: 'UNKNOWN_ERROR',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+      setState(prev => ({ ...prev, loading: false, error: apiError }));
+      onError?.(apiError);
+    }
+  }, [onSuccess, onError]);
+
+  const reset = useCallback(() => {
+    setState({
+      data: null,
+      loading: false,
+      error: null,
+      pagination: undefined,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (immediate) {
+      execute();
+    }
+  }, [immediate]);
+
+  return {
+    ...state,
+    execute,
+    reset,
+  };
+}
+
 // Repositories hook
 export function useRepositories(params?: { search?: string; page?: number; limit?: number }) {
-  return useApi(() => apiClient.getRepositories(params || {}), {
+  return usePaginatedApi(() => apiClient.getRepositories(params || {}), {
     immediate: true,
   });
 }
 
 // Scans hook
 export function useScans(params?: { repository_id?: string; status?: string; page?: number; limit?: number }) {
-  return useApi(() => apiClient.getScans(params || {}), {
+  return usePaginatedApi(() => apiClient.getScans(params || {}), {
     immediate: true,
   });
 }

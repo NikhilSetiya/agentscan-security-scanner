@@ -1,5 +1,7 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { ErrorBoundaryFallback } from './ui/ErrorState';
+import { errorHandler } from '../utils/errorHandler';
+import { observeLogger } from '../services/observeLogger';
 
 interface Props {
   children: ReactNode;
@@ -24,11 +26,15 @@ export class ErrorBoundary extends Component<Props, State> {
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('ErrorBoundary caught an error:', error, errorInfo);
     
-    // Log error to monitoring service in production
-    if (import.meta.env.MODE === 'production') {
-      // TODO: Send error to monitoring service
-      // logErrorToService(error, errorInfo);
-    }
+    // Handle error with enhanced error handler
+    const enhancedError = errorHandler.handleUnexpectedError(error, 'React Error Boundary');
+    
+    // Log to Observe MCP for debugging
+    observeLogger.logError(error, {
+      component: errorInfo.componentStack,
+      errorBoundary: true,
+      severity: enhancedError.severity,
+    });
   }
 
   private resetError = () => {

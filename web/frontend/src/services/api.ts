@@ -10,17 +10,22 @@ import { enhancedApiCall } from '../utils/retryMechanism'
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
 const API_TIMEOUT = 30000; // 30 seconds
 
-// Types
+// Types - Updated to match backend standardized response format
 export interface ApiError {
-  error: string;
   code: string;
-  details?: Record<string, string>;
+  message: string;
+  details?: Record<string, any>;
 }
 
 export interface ApiResponse<T> {
   data?: T;
   error?: ApiError;
   status: number;
+  meta?: {
+    pagination?: Pagination;
+    timestamp?: string;
+  };
+  request_id?: string;
 }
 
 export interface PaginationParams {
@@ -30,9 +35,24 @@ export interface PaginationParams {
 
 export interface Pagination {
   page: number;
-  limit: number;
+  page_size: number;
   total: number;
   total_pages: number;
+  has_next: boolean;
+  has_prev: boolean;
+}
+
+// Backend response wrapper format
+interface BackendResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: ApiError;
+  meta?: {
+    pagination?: Pagination;
+    timestamp: string;
+  };
+  request_id?: string;
+  timestamp: string;
 }
 
 // Authentication Types
@@ -81,7 +101,6 @@ export interface CreateRepositoryRequest {
 
 export interface RepositoryListResponse {
   repositories: Repository[];
-  pagination: Pagination;
 }
 
 // Scan Types
@@ -112,7 +131,6 @@ export interface SubmitScanRequest {
 
 export interface ScanListResponse {
   scans: Scan[];
-  pagination: Pagination;
 }
 
 export interface Finding {
@@ -243,6 +261,9 @@ class ApiClient {
         data = await response.text();
       }
 
+      // Parse backend response format
+      const backendResponse = data as BackendResponse<T>;
+
       if (!response.ok) {
         // Log API call failure
         observeLogger.logApiCall(
@@ -263,7 +284,8 @@ class ApiClient {
         // End trace with failure
         observeLogger.endTrace(traceId, false, {
           status: response.status,
-          error: `HTTP ${response.status}`
+          error: `HTTP ${response.status}`,
+          request_id: backendResponse.request_id
         });
 
         // Handle authentication errors
@@ -275,12 +297,51 @@ class ApiClient {
           console.log(`[API] Request failed with status ${response.status}:`, url);
         }
 
-        // Handle backend's error response format
-        const errorData = data?.error || data;
+        // Extract error from standardized backend response
+        const apiError: ApiError = backendResponse.error || {
+          code: `HTTP_${response.status}`,
+          message: `Request failed with status ${response.status}`,
+        };
+
         return {
           data: undefined,
-          error: errorData as ApiError,
+          error: apiError,
           status: response.status,
+          meta: backendResponse.meta,
+          request_id: backendResponse.request_id,
+        };
+      }
+
+      // Handle successful response
+      if (backendResponse.success === false && backendResponse.error) {
+        // Backend returned success: false with error details
+        observeLogger.logApiCall(
+          {
+            method: options.method || 'GET',
+            url: endpoint,
+            headers: this.getHeaders(),
+            body: options.body
+          },
+          {
+            status: response.status,
+            body: data,
+            error: backendResponse.error.message
+          },
+          duration
+        );
+
+        observeLogger.endTrace(traceId, false, {
+          status: response.status,
+          error: backendResponse.error.message,
+          request_id: backendResponse.request_id
+        });
+
+        return {
+          data: undefined,
+          error: backendResponse.error,
+          status: response.status,
+          meta: backendResponse.meta,
+          request_id: backendResponse.request_id,
         };
       }
 
@@ -302,16 +363,17 @@ class ApiClient {
       // End trace with success
       observeLogger.endTrace(traceId, true, {
         status: response.status,
-        duration_ms: duration
+        duration_ms: duration,
+        request_id: backendResponse.request_id
       });
 
-      // Handle backend's wrapped response format {success: true, data: ...}
-      const responseData = data?.success ? data.data : data;
-      
+      // Return the data from the standardized backend response with meta information
       return {
-        data: responseData as T,
+        data: backendResponse.data as T,
         error: undefined,
         status: response.status,
+        meta: backendResponse.meta,
+        request_id: backendResponse.request_id,
       };
     } catch (error) {
       clearTimeout(timeoutId);
@@ -336,21 +398,21 @@ class ApiClient {
         if (error.name === 'AbortError') {
           return {
             data: undefined,
-            error: { error: 'Request timeout', code: 'TIMEOUT' },
+            error: { code: 'TIMEOUT', message: 'Request timeout' },
             status: 408,
           };
         }
 
         return {
           data: undefined,
-          error: { error: error.message, code: 'NETWORK_ERROR' },
+          error: { code: 'NETWORK_ERROR', message: error.message },
           status: 0,
         };
       }
 
       return {
         data: undefined,
-        error: { error: 'Unknown error occurred', code: 'UNKNOWN_ERROR' },
+        error: { code: 'UNKNOWN_ERROR', message: 'Unknown error occurred' },
         status: 0,
       };
     }

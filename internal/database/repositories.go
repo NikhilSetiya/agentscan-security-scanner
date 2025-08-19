@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,6 +21,7 @@ type UserRepositoryInterface interface {
 	Update(ctx context.Context, user *types.User) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	List(ctx context.Context, pagination *Pagination) ([]*types.User, int64, error)
+	Health(ctx context.Context) error
 }
 
 // UserRepository handles user database operations
@@ -167,6 +169,11 @@ func (r *UserRepository) List(ctx context.Context, pagination *Pagination) ([]*t
 	}
 
 	return users, total, nil
+}
+
+// Health checks the database connection health
+func (r *UserRepository) Health(ctx context.Context) error {
+	return r.db.Health(ctx)
 }
 
 // ScanJobRepository handles scan job database operations
@@ -567,18 +574,430 @@ func (r *FindingRepository) List(ctx context.Context, filter *FindingFilter, pag
 	return findings, total, nil
 }
 
+// RepositoryRepositoryInterface defines the interface for repository operations
+type RepositoryRepositoryInterface interface {
+	Create(ctx context.Context, repo *types.Repository) error
+	GetByID(ctx context.Context, id uuid.UUID) (*types.Repository, error)
+	GetByURL(ctx context.Context, url string) (*types.Repository, error)
+	Update(ctx context.Context, repo *types.Repository) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	List(ctx context.Context, orgID *uuid.UUID, pagination *Pagination) ([]*types.Repository, int64, error)
+	ListActive(ctx context.Context, orgID *uuid.UUID) ([]*types.Repository, error)
+	SetLastScanAt(ctx context.Context, id uuid.UUID, scanTime time.Time) error
+}
+
+// RepositoryRepository handles repository database operations
+type RepositoryRepository struct {
+	db *DB
+}
+
+// NewRepositoryRepository creates a new repository repository
+func NewRepositoryRepository(db *DB) *RepositoryRepository {
+	return &RepositoryRepository{db: db}
+}
+
+// Create creates a new repository
+func (r *RepositoryRepository) Create(ctx context.Context, repo *types.Repository) error {
+	query := `
+		INSERT INTO repositories (
+			id, organization_id, name, url, provider, provider_id, 
+			default_branch, language, description, languages, settings, is_active
+		) VALUES (
+			:id, :organization_id, :name, :url, :provider, :provider_id,
+			:default_branch, :language, :description, :languages, :settings, true
+		)`
+
+	if repo.ID == uuid.Nil {
+		repo.ID = uuid.New()
+	}
+	repo.CreatedAt = time.Now()
+	repo.UpdatedAt = time.Now()
+
+	_, err := r.db.NamedExecContext(ctx, query, repo)
+	if err != nil {
+		return errors.NewInternalError("failed to create repository").WithCause(err)
+	}
+
+	return nil
+}
+
+// GetByID retrieves a repository by ID
+func (r *RepositoryRepository) GetByID(ctx context.Context, id uuid.UUID) (*types.Repository, error) {
+	var repo types.Repository
+	query := `SELECT * FROM repositories WHERE id = $1 AND is_active = true`
+
+	err := r.db.GetContext(ctx, &repo, query, id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, errors.NewNotFoundError("repository")
+		}
+		return nil, errors.NewInternalError("failed to get repository by ID").WithCause(err)
+	}
+
+	return &repo, nil
+}
+
+// GetByURL retrieves a repository by URL
+func (r *RepositoryRepository) GetByURL(ctx context.Context, url string) (*types.Repository, error) {
+	var repo types.Repository
+	query := `SELECT * FROM repositories WHERE url = $1 AND is_active = true`
+
+	err := r.db.GetContext(ctx, &repo, query, url)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, errors.NewNotFoundError("repository")
+		}
+		return nil, errors.NewInternalError("failed to get repository by URL").WithCause(err)
+	}
+
+	return &repo, nil
+}
+
+// Update updates a repository
+func (r *RepositoryRepository) Update(ctx context.Context, repo *types.Repository) error {
+	query := `
+		UPDATE repositories 
+		SET name = :name, url = :url, provider = :provider, provider_id = :provider_id,
+		    default_branch = :default_branch, language = :language, description = :description,
+		    languages = :languages, settings = :settings, updated_at = NOW()
+		WHERE id = :id AND is_active = true`
+
+	result, err := r.db.NamedExecContext(ctx, query, repo)
+	if err != nil {
+		return errors.NewInternalError("failed to update repository").WithCause(err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return errors.NewInternalError("failed to get rows affected").WithCause(err)
+	}
+
+	if rowsAffected == 0 {
+		return errors.NewNotFoundError("repository")
+	}
+
+	return nil
+}
+
+// Delete soft deletes a repository by setting is_active to false
+func (r *RepositoryRepository) Delete(ctx context.Context, id uuid.UUID) error {
+	query := `UPDATE repositories SET is_active = false, updated_at = NOW() WHERE id = $1`
+
+	result, err := r.db.ExecContext(ctx, query, id)
+	if err != nil {
+		return errors.NewInternalError("failed to delete repository").WithCause(err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return errors.NewInternalError("failed to get rows affected").WithCause(err)
+	}
+
+	if rowsAffected == 0 {
+		return errors.NewNotFoundError("repository")
+	}
+
+	return nil
+}
+
+// List retrieves a paginated list of repositories
+func (r *RepositoryRepository) List(ctx context.Context, orgID *uuid.UUID, pagination *Pagination) ([]*types.Repository, int64, error) {
+	var repos []*types.Repository
+	var total int64
+
+	// Build WHERE clause
+	whereClause := "WHERE is_active = true"
+	args := make(map[string]interface{})
+	
+	if orgID != nil {
+		whereClause += " AND organization_id = :organization_id"
+		args["organization_id"] = *orgID
+	}
+
+	// Get total count
+	countQuery := "SELECT COUNT(*) FROM repositories " + whereClause
+	if err := r.db.GetContext(ctx, &total, countQuery, args); err != nil {
+		return nil, 0, errors.NewInternalError("failed to count repositories").WithCause(err)
+	}
+
+	// Get paginated results
+	offset := (pagination.Page - 1) * pagination.PageSize
+	query := `SELECT * FROM repositories ` + whereClause + ` ORDER BY name ASC LIMIT :limit OFFSET :offset`
+	args["limit"] = pagination.PageSize
+	args["offset"] = offset
+
+	rows, err := r.db.NamedQueryContext(ctx, query, args)
+	if err != nil {
+		return nil, 0, errors.NewInternalError("failed to list repositories").WithCause(err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var repo types.Repository
+		if err := rows.StructScan(&repo); err != nil {
+			return nil, 0, errors.NewInternalError("failed to scan repository").WithCause(err)
+		}
+		repos = append(repos, &repo)
+	}
+
+	return repos, total, nil
+}
+
+// ListActive retrieves all active repositories for an organization
+func (r *RepositoryRepository) ListActive(ctx context.Context, orgID *uuid.UUID) ([]*types.Repository, error) {
+	var repos []*types.Repository
+	
+	whereClause := "WHERE is_active = true"
+	args := make(map[string]interface{})
+	
+	if orgID != nil {
+		whereClause += " AND organization_id = :organization_id"
+		args["organization_id"] = *orgID
+	}
+
+	query := `SELECT * FROM repositories ` + whereClause + ` ORDER BY name ASC`
+
+	rows, err := r.db.NamedQueryContext(ctx, query, args)
+	if err != nil {
+		return nil, errors.NewInternalError("failed to list active repositories").WithCause(err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var repo types.Repository
+		if err := rows.StructScan(&repo); err != nil {
+			return nil, errors.NewInternalError("failed to scan repository").WithCause(err)
+		}
+		repos = append(repos, &repo)
+	}
+
+	return repos, nil
+}
+
+// SetLastScanAt updates the last scan time for a repository
+func (r *RepositoryRepository) SetLastScanAt(ctx context.Context, id uuid.UUID, scanTime time.Time) error {
+	query := `UPDATE repositories SET last_scan_at = $1, updated_at = NOW() WHERE id = $2`
+
+	result, err := r.db.ExecContext(ctx, query, scanTime, id)
+	if err != nil {
+		return errors.NewInternalError("failed to update repository last scan time").WithCause(err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return errors.NewInternalError("failed to get rows affected").WithCause(err)
+	}
+
+	if rowsAffected == 0 {
+		return errors.NewNotFoundError("repository")
+	}
+
+	return nil
+}
+
+// DashboardRepository handles dashboard statistics operations
+type DashboardRepository struct {
+	db *DB
+}
+
+// NewDashboardRepository creates a new dashboard repository
+func NewDashboardRepository(db *DB) *DashboardRepository {
+	return &DashboardRepository{db: db}
+}
+
+// GetStats retrieves dashboard statistics
+func (r *DashboardRepository) GetStats(ctx context.Context, orgID *uuid.UUID) (map[string]interface{}, error) {
+	var stats struct {
+		TotalScans         int64 `db:"total_scans"`
+		TotalRepositories  int64 `db:"total_repositories"`
+		CriticalFindings   int64 `db:"critical_findings"`
+		HighFindings       int64 `db:"high_findings"`
+		MediumFindings     int64 `db:"medium_findings"`
+		LowFindings        int64 `db:"low_findings"`
+		InfoFindings       int64 `db:"info_findings"`
+	}
+
+	query := `
+		SELECT 
+			COUNT(DISTINCT sj.id) as total_scans,
+			COUNT(DISTINCT r.id) as total_repositories,
+			COUNT(CASE WHEN f.severity = 'critical' THEN 1 END) as critical_findings,
+			COUNT(CASE WHEN f.severity = 'high' THEN 1 END) as high_findings,
+			COUNT(CASE WHEN f.severity = 'medium' THEN 1 END) as medium_findings,
+			COUNT(CASE WHEN f.severity = 'low' THEN 1 END) as low_findings,
+			COUNT(CASE WHEN f.severity = 'info' THEN 1 END) as info_findings
+		FROM repositories r
+		LEFT JOIN scan_jobs sj ON r.id = sj.repository_id
+		LEFT JOIN findings f ON sj.id = f.scan_job_id
+		WHERE r.is_active = true`
+
+	args := make(map[string]interface{})
+	if orgID != nil {
+		query += " AND r.organization_id = :organization_id"
+		args["organization_id"] = *orgID
+	}
+
+	rows, err := r.db.NamedQueryContext(ctx, query, args)
+	if err != nil {
+		return nil, errors.NewInternalError("failed to get dashboard stats").WithCause(err)
+	}
+	defer rows.Close()
+
+	if rows.Next() {
+		if err := rows.StructScan(&stats); err != nil {
+			return nil, errors.NewInternalError("failed to scan dashboard stats").WithCause(err)
+		}
+	}
+
+	return map[string]interface{}{
+		"total_scans":      stats.TotalScans,
+		"total_repositories": stats.TotalRepositories,
+		"findings_by_severity": map[string]interface{}{
+			"critical": stats.CriticalFindings,
+			"high":     stats.HighFindings,
+			"medium":   stats.MediumFindings,
+			"low":      stats.LowFindings,
+			"info":     stats.InfoFindings,
+		},
+	}, nil
+}
+
+// GetRecentScans retrieves recent scans for dashboard
+func (r *DashboardRepository) GetRecentScans(ctx context.Context, orgID *uuid.UUID, limit int) ([]map[string]interface{}, error) {
+	query := `
+		SELECT 
+			sj.id,
+			sj.repository_id,
+			sj.status,
+			sj.scan_type,
+			sj.branch,
+			sj.commit_sha as commit,
+			sj.created_at as started_at,
+			sj.completed_at,
+			sj.error_message,
+			r.name as repository_name,
+			r.url as repository_url,
+			r.language as repository_language,
+			COUNT(f.id) as findings_count,
+			EXTRACT(EPOCH FROM (COALESCE(sj.completed_at, NOW()) - sj.started_at)) as duration_seconds
+		FROM scan_jobs sj
+		JOIN repositories r ON sj.repository_id = r.id
+		LEFT JOIN findings f ON sj.id = f.scan_job_id
+		WHERE r.is_active = true`
+
+	args := make(map[string]interface{})
+	if orgID != nil {
+		query += " AND r.organization_id = :organization_id"
+		args["organization_id"] = *orgID
+	}
+
+	query += `
+		GROUP BY sj.id, sj.repository_id, sj.status, sj.scan_type, sj.branch, 
+		         sj.commit_sha, sj.created_at, sj.completed_at, sj.error_message,
+		         r.name, r.url, r.language, sj.started_at
+		ORDER BY sj.created_at DESC 
+		LIMIT :limit`
+	args["limit"] = limit
+
+	rows, err := r.db.NamedQueryContext(ctx, query, args)
+	if err != nil {
+		return nil, errors.NewInternalError("failed to get recent scans").WithCause(err)
+	}
+	defer rows.Close()
+
+	var scans []map[string]interface{}
+	for rows.Next() {
+		var scan struct {
+			ID               uuid.UUID  `db:"id"`
+			RepositoryID     uuid.UUID  `db:"repository_id"`
+			Status           string     `db:"status"`
+			ScanType         string     `db:"scan_type"`
+			Branch           string     `db:"branch"`
+			Commit           string     `db:"commit"`
+			StartedAt        time.Time  `db:"started_at"`
+			CompletedAt      *time.Time `db:"completed_at"`
+			ErrorMessage     *string    `db:"error_message"`
+			RepositoryName   string     `db:"repository_name"`
+			RepositoryURL    string     `db:"repository_url"`
+			RepositoryLanguage *string  `db:"repository_language"`
+			FindingsCount    int64      `db:"findings_count"`
+			DurationSeconds  *float64   `db:"duration_seconds"`
+		}
+
+		if err := rows.StructScan(&scan); err != nil {
+			return nil, errors.NewInternalError("failed to scan recent scan").WithCause(err)
+		}
+
+		// Calculate progress based on status
+		progress := 0
+		if scan.Status == "completed" {
+			progress = 100
+		} else if scan.Status == "running" {
+			progress = 50 // Assume 50% for running scans
+		}
+
+		// Format duration
+		duration := ""
+		if scan.DurationSeconds != nil && *scan.DurationSeconds > 0 {
+			seconds := int(*scan.DurationSeconds)
+			if seconds >= 60 {
+				minutes := seconds / 60
+				seconds = seconds % 60
+				duration = fmt.Sprintf("%dm %ds", minutes, seconds)
+			} else {
+				duration = fmt.Sprintf("%ds", seconds)
+			}
+		}
+
+		scanData := map[string]interface{}{
+			"id":              scan.ID.String(),
+			"repository_id":   scan.RepositoryID.String(),
+			"repository": map[string]interface{}{
+				"id":       scan.RepositoryID.String(),
+				"name":     scan.RepositoryName,
+				"url":      scan.RepositoryURL,
+				"language": scan.RepositoryLanguage,
+				"branch":   scan.Branch,
+			},
+			"status":         scan.Status,
+			"progress":       progress,
+			"findings_count": scan.FindingsCount,
+			"started_at":     scan.StartedAt.Format(time.RFC3339),
+			"branch":         scan.Branch,
+			"commit":         scan.Commit,
+			"scan_type":      scan.ScanType,
+		}
+
+		if scan.CompletedAt != nil {
+			scanData["completed_at"] = scan.CompletedAt.Format(time.RFC3339)
+		}
+
+		if duration != "" {
+			scanData["duration"] = duration
+		}
+
+		scans = append(scans, scanData)
+	}
+
+	return scans, nil
+}
+
 // Repositories aggregates all repository interfaces
 type Repositories struct {
-	Users     UserRepositoryInterface
-	ScanJobs  *ScanJobRepository
-	Findings  *FindingRepository
+	Users        UserRepositoryInterface
+	ScanJobs     *ScanJobRepository
+	Findings     *FindingRepository
+	Repositories RepositoryRepositoryInterface
+	Dashboard    *DashboardRepository
 }
 
 // NewRepositories creates a new repositories instance
 func NewRepositories(db *DB) *Repositories {
 	return &Repositories{
-		Users:    NewUserRepository(db),
-		ScanJobs: NewScanJobRepository(db),
-		Findings: NewFindingRepository(db),
+		Users:        NewUserRepository(db),
+		ScanJobs:     NewScanJobRepository(db),
+		Findings:     NewFindingRepository(db),
+		Repositories: NewRepositoryRepository(db),
+		Dashboard:    NewDashboardRepository(db),
 	}
 }

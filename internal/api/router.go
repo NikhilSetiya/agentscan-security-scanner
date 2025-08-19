@@ -1,11 +1,7 @@
 package api
 
 import (
-	"net/http"
-	"time"
-
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 
 	"github.com/NikhilSetiya/agentscan-security-scanner/internal/database"
 	"github.com/NikhilSetiya/agentscan-security-scanner/internal/findings"
@@ -94,6 +90,8 @@ func NewRouter(cfg *config.Config, db *database.DB, redis *queue.RedisClient, re
 	// Create handlers
 	authHandler := NewAuthHandler(cfg, repos, auditLogger)
 	scanHandler := NewScanHandler(repos, orch, q)
+	dashboardHandler := NewDashboardHandler(repos)
+	repositoryHandler := NewRepositoryHandler(repos)
 	
 	// Create findings service and handler
 	findingsExporter := findings.NewExportService("http://localhost:8080") // TODO: Use config
@@ -121,75 +119,10 @@ func NewRouter(cfg *config.Config, db *database.DB, redis *queue.RedisClient, re
 			// Dashboard routes
 			dashboard := protected.Group("/dashboard")
 			{
-				dashboard.GET("/stats", func(c *gin.Context) {
-					// Return dashboard stats matching frontend DashboardStats interface exactly
-					SuccessResponse(c, map[string]interface{}{
-						"total_scans": 12,
-						"total_repositories": 3,
-						"findings_by_severity": map[string]interface{}{
-							"critical": 2,
-							"high":     5,
-							"medium":   8,
-							"low":      15,
-							"info":     3,
-						},
-						"recent_scans": []map[string]interface{}{
-							{
-								"id":              "scan-1",
-								"repository_id":   "repo-1",
-								"repository": map[string]interface{}{
-									"id":   "repo-1",
-									"name": "demo-repo",
-									"url":  "https://github.com/demo/repo",
-									"language": "JavaScript",
-									"branch": "main",
-									"created_at": "2025-08-17T10:00:00Z",
-									"last_scan_at": "2025-08-18T22:32:15Z",
-								},
-								"status":         "completed",
-								"progress":       100,
-								"findings_count": 7,
-								"started_at":     "2025-08-18T22:30:00Z",
-								"completed_at":   "2025-08-18T22:32:15Z",
-								"duration":       "2m 15s",
-								"branch":         "main",
-								"commit":         "abc123",
-								"commit_message": "Fix security vulnerability in authentication",
-								"triggered_by":   "user@example.com",
-								"scan_type":      "full",
-							},
-							{
-								"id":              "scan-2",
-								"repository_id":   "repo-2", 
-								"repository": map[string]interface{}{
-									"id":   "repo-2",
-									"name": "api-service",
-									"url":  "https://github.com/demo/api",
-									"language": "Python",
-									"branch": "develop",
-									"created_at": "2025-08-16T14:00:00Z",
-									"last_scan_at": "2025-08-18T23:15:00Z",
-								},
-								"status":         "running",
-								"progress":       65,
-								"findings_count": 3,
-								"started_at":     "2025-08-18T23:15:00Z",
-								"branch":         "develop",
-								"commit":         "def456",
-								"commit_message": "Add new API endpoint",
-								"triggered_by":   "admin@example.com",
-								"scan_type":      "incremental",
-							},
-						},
-						"trend_data": []map[string]interface{}{
-							{"date": "2025-08-14", "critical": 1, "high": 3, "medium": 5, "low": 12, "info": 2},
-							{"date": "2025-08-15", "critical": 0, "high": 2, "medium": 6, "low": 10, "info": 1},
-							{"date": "2025-08-16", "critical": 2, "high": 4, "medium": 7, "low": 13, "info": 3},
-							{"date": "2025-08-17", "critical": 1, "high": 3, "medium": 8, "low": 14, "info": 2},
-							{"date": "2025-08-18", "critical": 2, "high": 5, "medium": 8, "low": 15, "info": 3},
-						},
-					})
-				})
+				dashboard.GET("/stats", dashboardHandler.GetStats)
+				dashboard.GET("/trends", dashboardHandler.GetScanTrends)
+				dashboard.GET("/health", dashboardHandler.GetSystemHealth)
+				dashboard.GET("/repositories/:id/stats", dashboardHandler.GetRepositoryStats)
 			}
 
 			// User routes
@@ -204,79 +137,12 @@ func NewRouter(cfg *config.Config, db *database.DB, redis *queue.RedisClient, re
 			// Repository routes
 			repositories := protected.Group("/repositories")
 			{
-				repositories.GET("", func(c *gin.Context) {
-					// Return mock repositories for demo matching frontend Repository interface
-					SuccessResponse(c, map[string]interface{}{
-						"repositories": []map[string]interface{}{
-							{
-								"id":           "repo-1",
-								"name":         "demo-repo",
-								"url":          "https://github.com/demo/repo",
-								"language":     "JavaScript", 
-								"branch":       "main",
-								"created_at":   "2025-08-17T10:00:00Z",
-								"last_scan_at": "2025-08-18T22:32:15Z",
-							},
-							{
-								"id":           "repo-2",
-								"name":         "api-service",
-								"url":          "https://github.com/demo/api",
-								"language":     "Python",
-								"branch":       "develop", 
-								"created_at":   "2025-08-16T14:00:00Z",
-								"last_scan_at": "2025-08-18T23:15:00Z",
-							},
-							{
-								"id":         "repo-3",
-								"name":       "frontend-app",
-								"url":        "https://github.com/demo/frontend",
-								"language":   "TypeScript",
-								"branch":     "main",
-								"created_at": "2025-08-15T09:30:00Z",
-							},
-						},
-						"pagination": map[string]interface{}{
-							"page":        1,
-							"limit":       20,
-							"total":       3,
-							"total_pages": 1,
-						},
-					})
-				})
-
-				repositories.POST("", func(c *gin.Context) {
-					var req struct {
-						Name     string `json:"name" binding:"required"`
-						URL      string `json:"url" binding:"required"`
-						Language string `json:"language" binding:"required"`
-						Branch   string `json:"branch"`
-					}
-					
-					if err := c.ShouldBindJSON(&req); err != nil {
-						BadRequestResponse(c, "Invalid repository data")
-						return
-					}
-
-					branch := req.Branch
-					if branch == "" {
-						branch = "main"
-					}
-
-					// Return created repository matching frontend Repository interface
-					newRepo := map[string]interface{}{
-						"id":         uuid.New().String(),
-						"name":       req.Name,
-						"url":        req.URL,
-						"language":   req.Language,
-						"branch":     branch,
-						"created_at": time.Now().Format(time.RFC3339),
-					}
-
-					c.JSON(http.StatusCreated, APIResponse{
-						Success: true,
-						Data:    newRepo,
-					})
-				})
+				repositories.GET("", repositoryHandler.ListRepositories)
+				repositories.POST("", repositoryHandler.CreateRepository)
+				repositories.GET("/:id", repositoryHandler.GetRepository)
+				repositories.PUT("/:id", repositoryHandler.UpdateRepository)
+				repositories.DELETE("/:id", repositoryHandler.DeleteRepository)
+				repositories.GET("/:id/scans", repositoryHandler.GetRepositoryScans)
 			}
 
 			// Scan routes

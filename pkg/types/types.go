@@ -47,8 +47,11 @@ type Repository struct {
 	Provider       string                 `json:"provider" db:"provider"`
 	ProviderID     string                 `json:"provider_id" db:"provider_id"`
 	DefaultBranch  string                 `json:"default_branch" db:"default_branch"`
+	Language       string                 `json:"language" db:"language"`
+	Description    string                 `json:"description" db:"description"`
 	Languages      []string               `json:"languages" db:"languages"`
 	Settings       map[string]interface{} `json:"settings" db:"settings"`
+	IsActive       bool                   `json:"is_active" db:"is_active"`
 	LastScanAt     *time.Time             `json:"last_scan_at,omitempty" db:"last_scan_at"`
 	CreatedAt      time.Time              `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time              `json:"updated_at" db:"updated_at"`
