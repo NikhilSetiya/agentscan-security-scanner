@@ -65,7 +65,7 @@ function AppContent() {
   if (state.isLoading) {
     return (
       <div className="loading-container">
-        <div className="loading-spinner">Loading...</div>
+        <div className="loading-spinner">Loading AgentScan...</div>
       </div>
     );
   }
