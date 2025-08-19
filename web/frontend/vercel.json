@@ -32,11 +32,6 @@
       ]
     }
   ],
-  "functions": {
-    "web/frontend/src/**/*.{js,ts,tsx}": {
-      "maxDuration": 30
-    }
-  },
   "env": {
     "VITE_API_BASE_URL": "https://agentscan-security-scanner.fly.dev/api/v1"
   }
