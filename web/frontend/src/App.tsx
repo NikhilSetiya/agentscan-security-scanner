@@ -14,7 +14,7 @@ import { observeLogger } from './services/observeLogger';
 import './styles/globals.css';
 
 // Lazy load heavy components
-const Dashboard = lazy(() => import('./pages/SimpleDashboard').then(module => ({ default: module.SimpleDashboard })));
+const Dashboard = lazy(() => import('./pages/Dashboard').then(module => ({ default: module.Dashboard })));
 const Scans = lazy(() => import('./pages/Scans').then(module => ({ default: module.Scans })));
 const ScanResults = lazy(() => import('./pages/ScanResults').then(module => ({ default: module.ScanResults })));
 const Findings = lazy(() => import('./pages/Findings').then(module => ({ default: module.Findings })));
