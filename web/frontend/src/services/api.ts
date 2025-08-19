@@ -5,6 +5,7 @@
 
 import { observeLogger } from './observeLogger'
 import { enhancedApiCall } from '../utils/retryMechanism'
+import { supabase } from '../lib/supabase'
 
 // API Configuration
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
@@ -192,12 +193,15 @@ class ApiClient {
   constructor(baseURL: string, timeout: number = API_TIMEOUT) {
     this.baseURL = baseURL;
     this.timeout = timeout;
-    this.loadAuthToken();
+    // Initialize auth token asynchronously
+    this.loadAuthToken().catch(console.error);
   }
 
-  private loadAuthToken(): void {
-    this.authToken = localStorage.getItem('auth_token');
-    console.log('[API] Loaded auth token from localStorage:', this.authToken ? this.authToken.substring(0, 20) + '...' : 'null');
+  private async loadAuthToken(): Promise<void> {
+    // Get Supabase session instead of localStorage token
+    const { data: { session } } = await supabase.auth.getSession();
+    this.authToken = session?.access_token || null;
+    console.log('[API] Loaded auth token from Supabase:', this.authToken ? this.authToken.substring(0, 20) + '...' : 'null');
   }
 
   private saveAuthToken(token: string): void {
@@ -209,7 +213,13 @@ class ApiClient {
 
   private clearAuthToken(): void {
     this.authToken = null;
+    // Clear localStorage for backward compatibility, but don't rely on it
     localStorage.removeItem('auth_token');
+  }
+
+  // Add method to refresh token from Supabase
+  async refreshAuthToken(): Promise<void> {
+    await this.loadAuthToken();
   }
 
   private getHeaders(): Record<string, string> {
@@ -231,6 +241,9 @@ class ApiClient {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<ApiResponse<T>> {
+    // Ensure we have a fresh auth token before making the request
+    await this.loadAuthToken();
+    
     const url = `${this.baseURL}${endpoint}`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
