@@ -1,0 +1,38 @@
+# fly.toml app configuration file generated for agentscan-security-scanner on 2025-08-18T23:30:46+01:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'agentscan-security-scanner'
+primary_region = 'bom'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  GIN_MODE = 'release'
+  PORT = '8080'
+
+[processes]
+  app = './agentscan-security-scanner'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+  [[http_service.checks]]
+    interval = '15s'
+    timeout = '5s'
+    grace_period = '5s'
+    method = 'GET'
+    path = '/health'
+    protocol = 'http'
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1

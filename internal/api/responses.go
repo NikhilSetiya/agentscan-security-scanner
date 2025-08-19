@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -305,8 +306,10 @@ type LoginResponse struct {
 // UserDTO represents a user in API responses
 type UserDTO struct {
 	ID        uuid.UUID `json:"id"`
+	Username  string    `json:"username"`
 	Email     string    `json:"email"`
 	Name      string    `json:"name"`
+	Role      string    `json:"role"`
 	AvatarURL string    `json:"avatar_url"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -376,10 +379,25 @@ type UpdateFindingStatusRequest struct {
 
 // ToUserDTO converts a User to UserDTO
 func ToUserDTO(user *types.User) *UserDTO {
+	// Extract username from email if not available
+	username := user.Name
+	if username == "" {
+		if atIndex := strings.Index(user.Email, "@"); atIndex > 0 {
+			username = user.Email[:atIndex]
+		} else {
+			username = user.Email
+		}
+	}
+
+	// Default role - in production this should come from database
+	role := "developer" // matches frontend expectation: 'admin' | 'developer' | 'viewer'
+	
 	return &UserDTO{
 		ID:        user.ID,
+		Username:  username,
 		Email:     user.Email,
 		Name:      user.Name,
+		Role:      role,
 		AvatarURL: user.AvatarURL,
 		CreatedAt: user.CreatedAt,
 	}

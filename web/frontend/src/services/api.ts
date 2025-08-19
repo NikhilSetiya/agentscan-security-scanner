@@ -3,6 +3,9 @@
  * Provides centralized API communication with proper error handling and authentication
  */
 
+import { observeLogger } from './observeLogger'
+import { enhancedApiCall } from '../utils/retryMechanism'
+
 // API Configuration
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
 const API_TIMEOUT = 30000; // 30 seconds
@@ -46,9 +49,16 @@ export interface LoginResponse {
 
 export interface User {
   id: string;
-  username: string;
+  name: string;
   email: string;
-  role: 'admin' | 'developer' | 'viewer';
+  avatar_url: string;
+  github_id?: number;
+  gitlab_id?: number;
+  created_at: string;
+  updated_at: string;
+  // Legacy frontend compatibility
+  username?: string;
+  role?: 'admin' | 'developer' | 'viewer';
 }
 
 // Repository Types
@@ -169,11 +179,14 @@ class ApiClient {
 
   private loadAuthToken(): void {
     this.authToken = localStorage.getItem('auth_token');
+    console.log('[API] Loaded auth token from localStorage:', this.authToken ? this.authToken.substring(0, 20) + '...' : 'null');
   }
 
   private saveAuthToken(token: string): void {
+    console.log('[API] Saving auth token:', token.substring(0, 20) + '...');
     this.authToken = token;
     localStorage.setItem('auth_token', token);
+    console.log('[API] Token saved to localStorage, current authToken set');
   }
 
   private clearAuthToken(): void {
@@ -188,6 +201,9 @@ class ApiClient {
 
     if (this.authToken) {
       headers['Authorization'] = `Bearer ${this.authToken}`;
+      console.log('[API] Adding Authorization header with token:', this.authToken.substring(0, 20) + '...');
+    } else {
+      console.log('[API] No auth token available for request');
     }
 
     return headers;
@@ -200,6 +216,10 @@ class ApiClient {
     const url = `${this.baseURL}${endpoint}`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+    const startTime = Date.now();
+
+    // Create trace for this API call
+    const traceId = observeLogger.createTrace(`API ${options.method || 'GET'} ${endpoint}`);
 
     try {
       const response = await fetch(url, {
@@ -212,6 +232,7 @@ class ApiClient {
       });
 
       clearTimeout(timeoutId);
+      const duration = Date.now() - startTime;
 
       const contentType = response.headers.get('content-type');
       let data: any = null;
@@ -223,26 +244,93 @@ class ApiClient {
       }
 
       if (!response.ok) {
+        // Log API call failure
+        observeLogger.logApiCall(
+          {
+            method: options.method || 'GET',
+            url: endpoint,
+            headers: this.getHeaders(),
+            body: options.body
+          },
+          {
+            status: response.status,
+            body: data,
+            error: `HTTP ${response.status}`
+          },
+          duration
+        );
+
+        // End trace with failure
+        observeLogger.endTrace(traceId, false, {
+          status: response.status,
+          error: `HTTP ${response.status}`
+        });
+
         // Handle authentication errors
         if (response.status === 401) {
+          console.log('[API] 401 Unauthorized received, clearing token and dispatching logout event');
           this.clearAuthToken();
           window.dispatchEvent(new CustomEvent('auth:logout'));
+        } else {
+          console.log(`[API] Request failed with status ${response.status}:`, url);
         }
 
+        // Handle backend's error response format
+        const errorData = data?.error || data;
         return {
           data: undefined,
-          error: data as ApiError,
+          error: errorData as ApiError,
           status: response.status,
         };
       }
 
+      // Log successful API call
+      observeLogger.logApiCall(
+        {
+          method: options.method || 'GET',
+          url: endpoint,
+          headers: this.getHeaders(),
+          body: options.body
+        },
+        {
+          status: response.status,
+          body: data
+        },
+        duration
+      );
+
+      // End trace with success
+      observeLogger.endTrace(traceId, true, {
+        status: response.status,
+        duration_ms: duration
+      });
+
+      // Handle backend's wrapped response format {success: true, data: ...}
+      const responseData = data?.success ? data.data : data;
+      
       return {
-        data: data as T,
+        data: responseData as T,
         error: undefined,
         status: response.status,
       };
     } catch (error) {
       clearTimeout(timeoutId);
+      const duration = Date.now() - startTime;
+
+      // Log error to Observe
+      if (error instanceof Error) {
+        observeLogger.logError(error, {
+          endpoint,
+          method: options.method || 'GET',
+          duration_ms: duration
+        });
+      }
+
+      // End trace with failure
+      observeLogger.endTrace(traceId, false, {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        duration_ms: duration
+      });
 
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
@@ -268,9 +356,29 @@ class ApiClient {
     }
   }
 
+  // Enhanced request method with retry mechanism
+  private async enhancedRequest<T>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<ApiResponse<T>> {
+    return enhancedApiCall(
+      () => this.request<T>(endpoint, options),
+      {
+        maxAttempts: 3,
+        baseDelay: 1000,
+        retryCondition: (error) => {
+          // Don't retry authentication errors or client errors
+          if (error?.status >= 400 && error?.status < 500) return false
+          // Retry network errors and server errors
+          return true
+        }
+      }
+    )
+  }
+
   // Authentication Methods
   async login(credentials: LoginRequest): Promise<ApiResponse<LoginResponse>> {
-    const response = await this.request<LoginResponse>('/auth/login', {
+    const response = await this.enhancedRequest<LoginResponse>('/auth/login', {
       method: 'POST',
       body: JSON.stringify(credentials),
     });
@@ -289,6 +397,10 @@ class ApiClient {
 
     this.clearAuthToken();
     return response;
+  }
+
+  async getCurrentUser(): Promise<ApiResponse<User>> {
+    return this.request<User>('/user/me');
   }
 
   // Repository Methods
@@ -342,12 +454,12 @@ class ApiClient {
 
   // Dashboard Methods
   async getDashboardStats(): Promise<ApiResponse<DashboardStats>> {
-    return this.request<DashboardStats>('/dashboard/stats');
+    return this.enhancedRequest<DashboardStats>('/dashboard/stats');
   }
 
   // Health Check
   async healthCheck(): Promise<ApiResponse<{ status: string; timestamp: string }>> {
-    return this.request<{ status: string; timestamp: string }>('/health');
+    return this.enhancedRequest<{ status: string; timestamp: string }>('/health');
   }
 
   // Utility Methods

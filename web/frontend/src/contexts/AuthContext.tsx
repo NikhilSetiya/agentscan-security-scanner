@@ -95,23 +95,32 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (token) {
         // Verify token is still valid by making a health check or user info request
         try {
+          console.log('[AUTH] Checking existing token validity...');
           dispatch({ type: 'AUTH_START' });
           const response = await apiClient.healthCheck();
+          console.log('[AUTH] Health check response:', response);
           if (response.error) {
             // Token is invalid, clear it
+            console.log('[AUTH] Health check failed, logging out');
             dispatch({ type: 'AUTH_LOGOUT' });
           } else {
             // For now, create a mock user since we don't have a user info endpoint
             // In a real implementation, you'd call a /auth/me endpoint
+            console.log('[AUTH] Health check succeeded, creating mock user');
             const mockUser: User = {
               id: 'current-user',
-              username: 'Current User',
+              name: 'Current User',
               email: 'user@example.com',
-              role: 'developer',
+              avatar_url: '',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              username: 'Current User',
+              role: 'developer'
             };
             dispatch({ type: 'AUTH_SUCCESS', payload: mockUser });
           }
         } catch (error) {
+          console.log('[AUTH] Health check exception:', error);
           dispatch({ type: 'AUTH_LOGOUT' });
         }
       }
@@ -123,6 +132,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Listen for logout events from API client
   useEffect(() => {
     const handleLogout = () => {
+      console.log('[AUTH] Received auth:logout event, logging out...');
       dispatch({ type: 'AUTH_LOGOUT' });
     };
 
@@ -132,24 +142,37 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // Login function
   const login = async (credentials: LoginRequest): Promise<boolean> => {
+    console.log('[AUTH] Starting login process...');
     dispatch({ type: 'AUTH_START' });
 
     try {
       const response = await apiClient.login(credentials);
+      console.log('[AUTH] Login response:', response);
 
       if (response.error) {
+        console.log('[AUTH] Login failed with error:', response.error);
         dispatch({ type: 'AUTH_FAILURE', payload: response.error.error });
         return false;
       }
 
       if (response.data) {
-        dispatch({ type: 'AUTH_SUCCESS', payload: response.data.user });
+        console.log('[AUTH] Login successful, user:', response.data.user);
+        // Ensure user has compatibility fields
+        const user = {
+          ...response.data.user,
+          username: response.data.user.name || response.data.user.username,
+          role: response.data.user.role || 'developer'
+        };
+        console.log('[AUTH] Processed user object:', user);
+        dispatch({ type: 'AUTH_SUCCESS', payload: user });
         return true;
       }
 
+      console.log('[AUTH] Login failed - no data in response');
       dispatch({ type: 'AUTH_FAILURE', payload: 'Login failed' });
       return false;
     } catch (error) {
+      console.log('[AUTH] Login exception:', error);
       const errorMessage = error instanceof Error ? error.message : 'Login failed';
       dispatch({ type: 'AUTH_FAILURE', payload: errorMessage });
       return false;

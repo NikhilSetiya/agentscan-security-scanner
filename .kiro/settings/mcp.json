@@ -1,4 +1,33 @@
 {
   "mcpServers": {
+    "react-bits-mcp": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://react-bits-mcp.davidhzdev.workers.dev/sse"
+      ],
+      "disabled": false
+    },
+    "observe": {
+      "command": "npx",
+      "args": [
+        "mcp-remote@latest",
+        "https://185151019182.observeinc.com/v1/ai/mcp",
+        "--header",
+        "Authorization:${OBSERVE_AUTH_HEADER}"
+      ],
+      "env": {
+        "OBSERVE_AUTH_HEADER": "Bearer 185151019182 rvAHq-n8lawdcYX3u_8yI0kvZ64W7Ztz"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "log_event",
+        "create_trace",
+        "log_error",
+        "log_api_call",
+        "query_logs",
+        "create_dashboard"
+      ]
+    }
   }
 }

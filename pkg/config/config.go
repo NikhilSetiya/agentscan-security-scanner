@@ -16,6 +16,8 @@ type Config struct {
 	Auth     AuthConfig     `json:"auth"`
 	Logging  LoggingConfig  `json:"logging"`
 	GitHub   GitHubConfig   `json:"github"`
+	Supabase SupabaseConfig `json:"supabase"`
+	Observe  ObserveConfig  `json:"observe"`
 }
 
 // ServerConfig contains HTTP server configuration
@@ -77,6 +79,23 @@ type AuthConfig struct {
 type GitHubConfig struct {
 	AppID      int64  `json:"app_id"`
 	PrivateKey string `json:"private_key"`
+}
+
+// SupabaseConfig holds Supabase configuration
+type SupabaseConfig struct {
+	URL            string `json:"url"`
+	AnonKey        string `json:"anon_key"`
+	ServiceRoleKey string `json:"service_role_key"`
+	EnableSecrets  bool   `json:"enable_secrets"`
+}
+
+// ObserveConfig holds Observe MCP configuration
+type ObserveConfig struct {
+	Enabled     bool   `json:"enabled"`
+	Endpoint    string `json:"endpoint"`
+	APIKey      string `json:"api_key"`
+	ProjectID   string `json:"project_id"`
+	Environment string `json:"environment"`
 }
 
 // LoggingConfig contains logging configuration
@@ -142,6 +161,19 @@ func Load() (*Config, error) {
 		GitHub: GitHubConfig{
 			AppID:      getEnvInt64("GITHUB_APP_ID", 0),
 			PrivateKey: getEnvString("GITHUB_PRIVATE_KEY", ""),
+		},
+		Supabase: SupabaseConfig{
+			URL:            getEnvString("SUPABASE_URL", ""),
+			AnonKey:        getEnvString("SUPABASE_ANON_KEY", ""),
+			ServiceRoleKey: getEnvString("SUPABASE_SERVICE_ROLE_KEY", ""),
+			EnableSecrets:  getEnvBool("SUPABASE_ENABLE_SECRETS", false),
+		},
+		Observe: ObserveConfig{
+			Enabled:     getEnvBool("OBSERVE_ENABLED", false),
+			Endpoint:    getEnvString("OBSERVE_ENDPOINT", ""),
+			APIKey:      getEnvString("OBSERVE_API_KEY", ""),
+			ProjectID:   getEnvString("OBSERVE_PROJECT_ID", "agentscan-backend"),
+			Environment: getEnvString("OBSERVE_ENVIRONMENT", "development"),
 		},
 	}
 

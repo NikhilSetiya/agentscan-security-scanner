@@ -28,6 +28,12 @@ export function useApi<T>(
   });
 
   const mountedRef = useRef(true);
+  const apiCallRef = useRef(apiCall);
+
+  // Update the ref when apiCall changes
+  useEffect(() => {
+    apiCallRef.current = apiCall;
+  });
 
   useEffect(() => {
     return () => {
@@ -39,7 +45,7 @@ export function useApi<T>(
     setState(prev => ({ ...prev, loading: true, error: null }));
 
     try {
-      const response = await apiCall();
+      const response = await apiCallRef.current();
 
       if (!mountedRef.current) return;
 
@@ -60,7 +66,7 @@ export function useApi<T>(
       setState(prev => ({ ...prev, loading: false, error: apiError }));
       onError?.(apiError);
     }
-  }, [apiCall, onSuccess, onError]);
+  }, [onSuccess, onError]); // Stable dependencies
 
   const reset = useCallback(() => {
     setState({
@@ -74,7 +80,7 @@ export function useApi<T>(
     if (immediate) {
       execute();
     }
-  }, [execute, immediate]);
+  }, [immediate]); // Removed execute from dependencies since it's stable now
 
   return {
     ...state,
@@ -96,6 +102,12 @@ export function useMutation<TData, TVariables = void>(
   });
 
   const mountedRef = useRef(true);
+  const mutationFnRef = useRef(mutationFn);
+
+  // Update the ref when mutationFn changes
+  useEffect(() => {
+    mutationFnRef.current = mutationFn;
+  });
 
   useEffect(() => {
     return () => {
@@ -107,7 +119,7 @@ export function useMutation<TData, TVariables = void>(
     setState(prev => ({ ...prev, loading: true, error: null }));
 
     try {
-      const response = await mutationFn(variables);
+      const response = await mutationFnRef.current(variables);
 
       if (!mountedRef.current) return;
 
@@ -131,7 +143,7 @@ export function useMutation<TData, TVariables = void>(
       onError?.(apiError);
       return { success: false, error: apiError };
     }
-  }, [mutationFn, onSuccess, onError]);
+  }, [onSuccess, onError]); // Stable dependencies
 
   const reset = useCallback(() => {
     setState({
@@ -214,7 +226,7 @@ export function usePolling<T>(
     if (enabled && !loading) {
       intervalRef.current = setInterval(() => {
         execute();
-      }, interval);
+      }, interval) as unknown as number;
     }
 
     return () => {
@@ -222,7 +234,7 @@ export function usePolling<T>(
         clearInterval(intervalRef.current);
       }
     };
-  }, [enabled, loading, interval, execute]);
+  }, [enabled, loading, interval]); // Removed execute from dependencies since it's now stable
 
   return { data, loading, error, execute };
 }

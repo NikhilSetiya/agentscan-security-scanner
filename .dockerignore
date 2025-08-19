@@ -1,0 +1,34 @@
+# Ignore development files
+.git
+.gitignore
+.dockerignore
+Dockerfile*
+README.md
+CLAUDE.md
+
+# Ignore build artifacts
+/bin
+/api-server
+/orchestrator
+/migrate
+test-build
+
+# Ignore development configs
+.env*
+.do/
+
+# Ignore tests
+*_test.go
+tests/
+/vscode-extension/
+/docs-site/
+/web/frontend/
+
+# Ignore CI/CD
+.github/
+terraform/
+k8s/
+
+# OS files
+.DS_Store
+Thumbs.db

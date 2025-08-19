@@ -272,6 +272,69 @@ func (h *AuthHandler) GetCurrentUserInfo(c *gin.Context) {
 	SuccessResponse(c, ToUserDTO(user))
 }
 
+// Login handles simple username/password login for testing
+func (h *AuthHandler) Login(c *gin.Context) {
+	var req struct {
+		Email    string `json:"email"`
+		Username string `json:"username"`
+		Password string `json:"password" binding:"required"`
+	}
+	
+	if err := c.ShouldBindJSON(&req); err != nil {
+		BadRequestResponse(c, "Invalid login request")
+		return
+	}
+
+	// Accept either email or username
+	loginIdentifier := req.Email
+	if loginIdentifier == "" {
+		loginIdentifier = req.Username
+	}
+
+	// For demo purposes, accept any email/username/password combination
+	// In production, this would validate against a database
+	if loginIdentifier == "" || req.Password == "" {
+		UnauthorizedResponse(c, "Invalid credentials")
+		return
+	}
+
+	// Create a demo user
+	email := loginIdentifier
+	if !strings.Contains(email, "@") {
+		email = loginIdentifier + "@demo.agentscan.dev"
+	}
+
+	demoUser := &types.User{
+		ID:        uuid.New(),
+		Email:     email,
+		Name:      loginIdentifier,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	// Generate JWT token
+	token, expiresAt, err := h.generateJWTToken(demoUser)
+	if err != nil {
+		InternalErrorResponse(c, "Failed to generate authentication token")
+		return
+	}
+
+	// Log successful login
+	h.auditLogger.LogAuthEvent(c.Request.Context(), AuditEventLogin, &demoUser.ID, true, map[string]interface{}{
+		"provider":       "demo",
+		"identifier":     loginIdentifier,
+		"login_type":     "password",
+	}, c)
+
+	response := LoginResponse{
+		Token:     token,
+		ExpiresAt: expiresAt,
+		User:      ToUserDTO(demoUser),
+	}
+
+	SuccessResponse(c, response)
+}
+
 // Logout handles user logout (client-side token invalidation)
 func (h *AuthHandler) Logout(c *gin.Context) {
 	// Get current user for audit logging

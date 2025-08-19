@@ -28,10 +28,9 @@ func New(cfg *config.DatabaseConfig) (*DB, error) {
 		return nil, errors.NewValidationError("database configuration is required")
 	}
 
-	// Build optimized connection string with performance parameters
+	// Build basic connection string compatible with PgBouncer
 	connStr := fmt.Sprintf(
-		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s "+
-		"connect_timeout=10 statement_timeout=30000 idle_in_transaction_session_timeout=60000",
+		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s connect_timeout=10",
 		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.Name, cfg.SSLMode,
 	)
 

@@ -15,13 +15,31 @@ import (
 	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/types"
 )
 
-// CORSMiddleware handles CORS headers
+// CORSMiddleware handles CORS headers with environment-aware configuration
 func CORSMiddleware() gin.HandlerFunc {
 	return gin.HandlerFunc(func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
+		origin := c.Request.Header.Get("Origin")
+		
+		// Check if origin is allowed
+		originAllowed := isOriginAllowed(origin)
+		
+		// Set CORS headers
+		if originAllowed {
+			c.Header("Access-Control-Allow-Origin", origin)
+		} else {
+			// In development, allow all origins for easier testing
+			if gin.Mode() == gin.DebugMode {
+				c.Header("Access-Control-Allow-Origin", "*")
+			} else {
+				// In production, be more restrictive
+				c.Header("Access-Control-Allow-Origin", "")
+			}
+		}
+		
 		c.Header("Access-Control-Allow-Credentials", "true")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With, X-Request-ID")
 		c.Header("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
+		c.Header("Access-Control-Max-Age", "86400") // Cache preflight for 24 hours
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
@@ -30,6 +48,54 @@ func CORSMiddleware() gin.HandlerFunc {
 
 		c.Next()
 	})
+}
+
+// isOriginAllowed checks if the origin is allowed based on environment and patterns
+func isOriginAllowed(origin string) bool {
+	if origin == "" {
+		return false
+	}
+
+	// Always allow localhost for development
+	localOrigins := []string{
+		"http://localhost:3000",
+		"http://localhost:4173",
+		"http://localhost:5173",
+		"http://127.0.0.1:3000",
+		"http://127.0.0.1:4173",
+		"http://127.0.0.1:5173",
+	}
+	
+	for _, localOrigin := range localOrigins {
+		if origin == localOrigin {
+			return true
+		}
+	}
+
+	// Allow Vercel preview and production deployments
+	if strings.Contains(origin, "vercel.app") {
+		// Allow any Vercel deployment for this project
+		if strings.Contains(origin, "nikhilsetiyas-projects.vercel.app") ||
+		   strings.Contains(origin, "agentscan") ||
+		   strings.Contains(origin, "frontend-") {
+			return true
+		}
+	}
+
+	// Allow custom domains (add your production domains here)
+	productionDomains := []string{
+		"https://agentscan.dev",
+		"https://www.agentscan.dev",
+		"https://app.agentscan.dev",
+	}
+	
+	for _, domain := range productionDomains {
+		if origin == domain {
+			return true
+		}
+	}
+
+	return false
 }
 
 // SecurityHeadersMiddleware adds security headers
