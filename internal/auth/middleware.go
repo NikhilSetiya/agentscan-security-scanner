@@ -203,7 +203,17 @@ func (m *Middleware) authenticateRequest(c *gin.Context) (*types.User, error) {
 
 	tokenString := tokenParts[1]
 
-	// Validate token
+	// Try Supabase token validation first
+	if supabaseUser, err := m.validateSupabaseToken(c.Request.Context(), tokenString); err == nil {
+		// Convert Supabase user to our user type and ensure they exist in our database
+		user, err := m.getOrCreateUserFromSupabase(c.Request.Context(), supabaseUser)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get or create user: %w", err)
+		}
+		return user, nil
+	}
+
+	// Fallback to JWT token validation for backward compatibility
 	claims, err := m.authService.ValidateAccessToken(tokenString)
 	if err != nil {
 		return nil, fmt.Errorf("invalid or expired token: %w", err)
@@ -216,6 +226,67 @@ func (m *Middleware) authenticateRequest(c *gin.Context) (*types.User, error) {
 	}
 
 	return user, nil
+}
+
+// validateSupabaseToken validates a Supabase JWT token
+func (m *Middleware) validateSupabaseToken(ctx context.Context, token string) (*SupabaseUser, error) {
+	// Create Supabase client if not already created
+	supabaseClient, err := NewSupabaseClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Supabase client: %w", err)
+	}
+
+	// Validate token with Supabase
+	user, err := supabaseClient.ValidateToken(ctx, token)
+	if err != nil {
+		return nil, fmt.Errorf("Supabase token validation failed: %w", err)
+	}
+
+	return user, nil
+}
+
+// getOrCreateUserFromSupabase gets or creates a user in our database from Supabase user data
+func (m *Middleware) getOrCreateUserFromSupabase(ctx context.Context, supabaseUser *SupabaseUser) (*types.User, error) {
+	// Try to find user by Supabase ID first
+	user, err := m.userService.GetUserBySupabaseID(ctx, supabaseUser.ID)
+	if err == nil {
+		// User exists, update their information if needed
+		if user.Email != supabaseUser.Email || user.Name != supabaseUser.Name {
+			user.Email = supabaseUser.Email
+			user.Name = supabaseUser.Name
+			if err := m.userService.UpdateUser(ctx, user); err != nil {
+				// Log error but don't fail authentication
+				// TODO: Add proper logging
+			}
+		}
+		return user, nil
+	}
+
+	// Try to find user by email (for migration purposes)
+	user, err = m.userService.GetUserByEmail(ctx, supabaseUser.Email)
+	if err == nil {
+		// User exists with same email, link to Supabase ID
+		user.SupabaseID = &supabaseUser.ID
+		user.Name = supabaseUser.Name
+		if err := m.userService.UpdateUser(ctx, user); err != nil {
+			return nil, fmt.Errorf("failed to link user to Supabase: %w", err)
+		}
+		return user, nil
+	}
+
+	// User doesn't exist, create new user
+	newUser := &types.User{
+		Email:      supabaseUser.Email,
+		Name:       supabaseUser.Name,
+		SupabaseID: &supabaseUser.ID,
+	}
+
+	createdUser, err := m.userService.CreateUser(ctx, newUser)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+
+	return createdUser, nil
 }
 
 // checkOrganizationAccess checks if a user has access to an organization

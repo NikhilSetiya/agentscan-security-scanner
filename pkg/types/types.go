@@ -8,14 +8,15 @@ import (
 
 // User represents a user in the system
 type User struct {
-	ID        uuid.UUID  `json:"id" db:"id"`
-	Email     string     `json:"email" db:"email"`
-	Name      string     `json:"name" db:"name"`
-	AvatarURL string     `json:"avatar_url" db:"avatar_url"`
-	GitHubID  *int       `json:"github_id,omitempty" db:"github_id"`
-	GitLabID  *int       `json:"gitlab_id,omitempty" db:"gitlab_id"`
-	CreatedAt time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
+	ID         uuid.UUID  `json:"id" db:"id"`
+	Email      string     `json:"email" db:"email"`
+	Name       string     `json:"name" db:"name"`
+	AvatarURL  string     `json:"avatar_url" db:"avatar_url"`
+	SupabaseID *string    `json:"supabase_id,omitempty" db:"supabase_id"`
+	GitHubID   *int       `json:"github_id,omitempty" db:"github_id"`
+	GitLabID   *int       `json:"gitlab_id,omitempty" db:"gitlab_id"`
+	CreatedAt  time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at" db:"updated_at"`
 }
 
 // Organization represents an organization/team

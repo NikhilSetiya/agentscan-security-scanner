@@ -123,6 +123,14 @@ func (m *MockUserRepository) GetByEmail(ctx context.Context, email string) (*typ
 	return args.Get(0).(*types.User), args.Error(1)
 }
 
+func (m *MockUserRepository) GetBySupabaseID(ctx context.Context, supabaseID string) (*types.User, error) {
+	args := m.Called(ctx, supabaseID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*types.User), args.Error(1)
+}
+
 func (m *MockUserRepository) Update(ctx context.Context, user *types.User) error {
 	args := m.Called(ctx, user)
 	return args.Error(0)

@@ -272,6 +272,70 @@ func (h *AuthHandler) GetCurrentUserInfo(c *gin.Context) {
 	SuccessResponse(c, ToUserDTO(user))
 }
 
+// UpdateUserProfile updates the current user's profile information
+func (h *AuthHandler) UpdateUserProfile(c *gin.Context) {
+	user, exists := GetCurrentUser(c)
+	if !exists {
+		UnauthorizedResponse(c, "User not found in context")
+		return
+	}
+
+	var req struct {
+		Name      string `json:"name" binding:"required,min=1,max=255"`
+		AvatarURL string `json:"avatar_url" binding:"omitempty,url"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		BadRequestResponse(c, "Invalid profile update request")
+		return
+	}
+
+	// Update user information
+	user.Name = req.Name
+	if req.AvatarURL != "" {
+		user.AvatarURL = req.AvatarURL
+	}
+	user.UpdatedAt = time.Now()
+
+	if err := h.repos.Users.Update(c.Request.Context(), user); err != nil {
+		InternalErrorResponse(c, "Failed to update user profile")
+		return
+	}
+
+	SuccessResponse(c, ToUserDTO(user))
+}
+
+// DeleteUserAccount deletes the current user's account
+func (h *AuthHandler) DeleteUserAccount(c *gin.Context) {
+	user, exists := GetCurrentUser(c)
+	if !exists {
+		UnauthorizedResponse(c, "User not found in context")
+		return
+	}
+
+	// TODO: Implement proper account deletion with data cleanup
+	// This should include:
+	// - Removing user from organizations
+	// - Cleaning up scan jobs and findings
+	// - Invalidating all sessions
+	// - Audit logging
+
+	if err := h.repos.Users.Delete(c.Request.Context(), user.ID); err != nil {
+		InternalErrorResponse(c, "Failed to delete user account")
+		return
+	}
+
+	// Log the account deletion
+	h.auditLogger.LogAuthEvent(c.Request.Context(), AuditEventUserDeleted, &user.ID, true, map[string]interface{}{
+		"user_email": user.Email,
+		"deleted_at": time.Now(),
+	}, c)
+
+	SuccessResponse(c, gin.H{
+		"message": "Account deleted successfully",
+	})
+}
+
 // Login handles simple username/password login for testing
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req struct {

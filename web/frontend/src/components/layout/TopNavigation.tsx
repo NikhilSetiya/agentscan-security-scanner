@@ -14,7 +14,7 @@ export interface TopNavigationProps {
 export const TopNavigation: React.FC<TopNavigationProps> = ({ onMenuToggle, isSidebarOpen }) => {
   const [searchValue, setSearchValue] = useState('');
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const { state, logout } = useAuth();
+  const { state, signOut } = useAuth();
 
   const handleSearch = (value: string) => {
     setSearchValue(value);
@@ -23,7 +23,7 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({ onMenuToggle, isSi
   };
 
   const handleLogout = async () => {
-    await logout();
+    await signOut();
     setShowUserMenu(false);
   };
 
@@ -81,7 +81,7 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({ onMenuToggle, isSi
             >
               <User size={20} />
               <span className="nav-user-name">
-                {state.user?.username || 'User'}
+                {state.user?.name || 'User'}
               </span>
             </Button>
             
@@ -89,7 +89,7 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({ onMenuToggle, isSi
               <div className="user-menu">
                 <div className="user-menu-header">
                   <div className="user-info">
-                    <div className="user-name">{state.user?.username}</div>
+                    <div className="user-name">{state.user?.name}</div>
                     <div className="user-email">{state.user?.email}</div>
                   </div>
                 </div>

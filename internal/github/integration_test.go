@@ -416,6 +416,10 @@ func (m *mockUserRepository) GetByEmail(ctx context.Context, email string) (*typ
 	return &types.User{Email: email}, nil
 }
 
+func (m *mockUserRepository) GetBySupabaseID(ctx context.Context, supabaseID string) (*types.User, error) {
+	return &types.User{SupabaseID: &supabaseID}, nil
+}
+
 func (m *mockUserRepository) Update(ctx context.Context, user *types.User) error {
 	return nil
 }

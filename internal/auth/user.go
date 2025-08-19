@@ -197,3 +197,29 @@ func (s *UserService) UpdateLastActive(ctx context.Context, userID uuid.UUID) er
 	// This could be called from middleware to track user activity
 	return nil
 }
+
+// GetUserBySupabaseID returns a user by their Supabase ID
+func (s *UserService) GetUserBySupabaseID(ctx context.Context, supabaseID string) (*types.User, error) {
+	return s.repos.Users.GetBySupabaseID(ctx, supabaseID)
+}
+
+// CreateUser creates a new user
+func (s *UserService) CreateUser(ctx context.Context, user *types.User) (*types.User, error) {
+	// Set timestamps
+	now := time.Now()
+	user.ID = uuid.New()
+	user.CreatedAt = now
+	user.UpdatedAt = now
+
+	if err := s.repos.Users.Create(ctx, user); err != nil {
+		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+
+	return user, nil
+}
+
+// UpdateUser updates an existing user
+func (s *UserService) UpdateUser(ctx context.Context, user *types.User) error {
+	user.UpdatedAt = time.Now()
+	return s.repos.Users.Update(ctx, user)
+}

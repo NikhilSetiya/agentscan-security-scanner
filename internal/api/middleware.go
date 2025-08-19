@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -164,7 +166,15 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 
 		tokenString := tokenParts[1]
 
-		// Parse and validate token
+		// Try Supabase token validation first
+		if user, err := validateSupabaseTokenInAPI(c.Request.Context(), tokenString); err == nil {
+			c.Set("user", user)
+			c.Set("user_id", user.ID)
+			c.Next()
+			return
+		}
+
+		// Fallback to JWT token validation
 		token, err := jwt.ParseWithClaims(tokenString, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
 			// Validate signing method
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -322,4 +332,83 @@ func GetCurrentUserID(c *gin.Context) (uuid.UUID, bool) {
 	
 	id, ok := userID.(uuid.UUID)
 	return id, ok
+}
+
+// validateSupabaseTokenInAPI validates a Supabase JWT token and returns user info for API middleware
+func validateSupabaseTokenInAPI(ctx context.Context, tokenString string) (*types.User, error) {
+	// Parse the JWT token to extract claims
+	// Supabase tokens are JWT tokens signed with the project's secret
+	supabaseJWTSecret := os.Getenv("SUPABASE_JWT_SECRET")
+	if supabaseJWTSecret == "" {
+		return nil, fmt.Errorf("SUPABASE_JWT_SECRET environment variable is required")
+	}
+
+	// Parse and validate Supabase JWT token
+	token, err := jwt.ParseWithClaims(tokenString, &SupabaseJWTClaims{}, func(token *jwt.Token) (interface{}, error) {
+		// Validate signing method
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return []byte(supabaseJWTSecret), nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse Supabase token: %w", err)
+	}
+
+	claims, ok := token.Claims.(*SupabaseJWTClaims)
+	if !ok || !token.Valid {
+		return nil, fmt.Errorf("invalid Supabase token claims")
+	}
+
+	// Check token expiration
+	if claims.ExpiresAt != nil && claims.ExpiresAt.Time.Before(time.Now()) {
+		return nil, fmt.Errorf("Supabase token has expired")
+	}
+
+	// Extract user information from claims
+	userID, err := uuid.Parse(claims.Subject)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user ID in Supabase token: %w", err)
+	}
+
+	// Extract email and name from user metadata
+	email := ""
+	name := ""
+	
+	if claims.Email != "" {
+		email = claims.Email
+	}
+
+	if claims.UserMetadata != nil {
+		if nameVal, ok := claims.UserMetadata["name"]; ok {
+			if nameStr, ok := nameVal.(string); ok {
+				name = nameStr
+			}
+		}
+	}
+
+	// If no name in metadata, try to extract from email
+	if name == "" && email != "" {
+		if atIndex := strings.Index(email, "@"); atIndex > 0 {
+			name = email[:atIndex]
+		}
+	}
+
+	user := &types.User{
+		ID:    userID,
+		Email: email,
+		Name:  name,
+	}
+
+	return user, nil
+}
+
+// SupabaseJWTClaims represents the JWT token claims from Supabase
+type SupabaseJWTClaims struct {
+	Email        string                 `json:"email"`
+	UserMetadata map[string]interface{} `json:"user_metadata"`
+	AppMetadata  map[string]interface{} `json:"app_metadata"`
+	Role         string                 `json:"role"`
+	jwt.RegisteredClaims
 }

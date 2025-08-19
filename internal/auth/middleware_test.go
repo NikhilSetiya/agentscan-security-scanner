@@ -141,7 +141,8 @@ func TestMiddleware_AuthRequired_ExpiredToken(t *testing.T) {
 
 	authService := NewService(cfg, repos)
 	userService := NewUserService(repos)
-	middleware := NewMiddleware(authService, userService, repos, cfg)
+	rbacService := NewRBACService(repos)
+	middleware := NewMiddleware(authService, userService, rbacService, repos, cfg)
 
 	// Create a test user and token
 	user := &types.User{

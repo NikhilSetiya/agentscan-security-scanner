@@ -1,9 +1,11 @@
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
-import { apiClient, User, LoginRequest } from '../services/api';
+import { supabaseAuth, AuthUser, AuthSession, SignInData, SignUpData, ResetPasswordData } from '../services/supabaseAuth';
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 
 // Auth State Types
 interface AuthState {
-  user: User | null;
+  user: AuthUser | null;
+  session: AuthSession | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
@@ -12,24 +14,28 @@ interface AuthState {
 // Auth Actions
 type AuthAction =
   | { type: 'AUTH_START' }
-  | { type: 'AUTH_SUCCESS'; payload: User }
+  | { type: 'AUTH_SUCCESS'; payload: { user: AuthUser; session: AuthSession } }
   | { type: 'AUTH_FAILURE'; payload: string }
   | { type: 'AUTH_LOGOUT' }
-  | { type: 'AUTH_CLEAR_ERROR' };
+  | { type: 'AUTH_CLEAR_ERROR' }
+  | { type: 'AUTH_SESSION_UPDATE'; payload: { user: AuthUser; session: AuthSession } };
 
 // Auth Context Type
 interface AuthContextType {
   state: AuthState;
-  login: (credentials: LoginRequest) => Promise<boolean>;
-  logout: () => Promise<void>;
+  signIn: (credentials: SignInData) => Promise<boolean>;
+  signUp: (credentials: SignUpData) => Promise<boolean>;
+  signOut: () => Promise<void>;
+  resetPassword: (data: ResetPasswordData) => Promise<boolean>;
   clearError: () => void;
 }
 
 // Initial State
 const initialState: AuthState = {
   user: null,
+  session: null,
   isAuthenticated: false,
-  isLoading: false,
+  isLoading: true, // Start with loading true to check existing session
   error: null,
 };
 
@@ -45,7 +51,17 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
     case 'AUTH_SUCCESS':
       return {
         ...state,
-        user: action.payload,
+        user: action.payload.user,
+        session: action.payload.session,
+        isAuthenticated: true,
+        isLoading: false,
+        error: null,
+      };
+    case 'AUTH_SESSION_UPDATE':
+      return {
+        ...state,
+        user: action.payload.user,
+        session: action.payload.session,
         isAuthenticated: true,
         isLoading: false,
         error: null,
@@ -54,6 +70,7 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
       return {
         ...state,
         user: null,
+        session: null,
         isAuthenticated: false,
         isLoading: false,
         error: action.payload,
@@ -62,6 +79,7 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
       return {
         ...state,
         user: null,
+        session: null,
         isAuthenticated: false,
         isLoading: false,
         error: null,
@@ -88,106 +106,217 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
 
-  // Check for existing authentication on mount
+  // Check for existing session on mount and listen for auth changes
   useEffect(() => {
-    const checkAuth = async () => {
-      const token = apiClient.getAuthToken();
-      if (token) {
-        // Verify token is still valid by making a health check or user info request
-        try {
-          console.log('[AUTH] Checking existing token validity...');
-          dispatch({ type: 'AUTH_START' });
-          const response = await apiClient.healthCheck();
-          console.log('[AUTH] Health check response:', response);
-          if (response.error) {
-            // Token is invalid, clear it
-            console.log('[AUTH] Health check failed, logging out');
-            dispatch({ type: 'AUTH_LOGOUT' });
-          } else {
-            // For now, create a mock user since we don't have a user info endpoint
-            // In a real implementation, you'd call a /auth/me endpoint
-            console.log('[AUTH] Health check succeeded, creating mock user');
-            const mockUser: User = {
-              id: 'current-user',
-              name: 'Current User',
-              email: 'user@example.com',
-              avatar_url: '',
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              username: 'Current User',
-              role: 'developer'
-            };
-            dispatch({ type: 'AUTH_SUCCESS', payload: mockUser });
-          }
-        } catch (error) {
-          console.log('[AUTH] Health check exception:', error);
+    let mounted = true;
+
+    const initializeAuth = async () => {
+      try {
+        console.log('[AUTH] Initializing authentication...');
+        
+        // Get current session
+        const { session, error } = await supabaseAuth.getSession();
+        
+        if (!mounted) return;
+
+        if (error) {
+          console.error('[AUTH] Session check error:', error);
+          dispatch({ type: 'AUTH_FAILURE', payload: error.message });
+          return;
+        }
+
+        if (session) {
+          console.log('[AUTH] Found existing session');
+          dispatch({ 
+            type: 'AUTH_SUCCESS', 
+            payload: { user: session.user, session } 
+          });
+        } else {
+          console.log('[AUTH] No existing session found');
           dispatch({ type: 'AUTH_LOGOUT' });
         }
+      } catch (error) {
+        if (!mounted) return;
+        console.error('[AUTH] Initialize auth exception:', error);
+        dispatch({ 
+          type: 'AUTH_FAILURE', 
+          payload: error instanceof Error ? error.message : 'Authentication initialization failed' 
+        });
       }
     };
 
-    checkAuth();
-  }, []);
+    // Set up auth state change listener
+    const { data: { subscription } } = supabaseAuth.onAuthStateChange(
+      async (event: AuthChangeEvent, session: Session | null) => {
+        if (!mounted) return;
 
-  // Listen for logout events from API client
-  useEffect(() => {
-    const handleLogout = () => {
-      console.log('[AUTH] Received auth:logout event, logging out...');
-      dispatch({ type: 'AUTH_LOGOUT' });
+        console.log('[AUTH] Auth state changed:', event, session?.user?.email);
+
+        switch (event) {
+          case 'SIGNED_IN':
+            if (session) {
+              try {
+                const { session: authSession, error } = await supabaseAuth.getSession();
+                if (error) {
+                  dispatch({ type: 'AUTH_FAILURE', payload: error.message });
+                } else if (authSession) {
+                  dispatch({ 
+                    type: 'AUTH_SUCCESS', 
+                    payload: { user: authSession.user, session: authSession } 
+                  });
+                }
+              } catch (error) {
+                dispatch({ 
+                  type: 'AUTH_FAILURE', 
+                  payload: error instanceof Error ? error.message : 'Sign in failed' 
+                });
+              }
+            }
+            break;
+          
+          case 'SIGNED_OUT':
+            dispatch({ type: 'AUTH_LOGOUT' });
+            break;
+          
+          case 'TOKEN_REFRESHED':
+            if (session) {
+              try {
+                const { session: authSession, error } = await supabaseAuth.getSession();
+                if (error) {
+                  console.warn('[AUTH] Token refresh session error:', error);
+                } else if (authSession) {
+                  dispatch({ 
+                    type: 'AUTH_SESSION_UPDATE', 
+                    payload: { user: authSession.user, session: authSession } 
+                  });
+                }
+              } catch (error) {
+                console.warn('[AUTH] Token refresh exception:', error);
+              }
+            }
+            break;
+          
+          case 'PASSWORD_RECOVERY':
+            // Handle password recovery if needed
+            break;
+          
+          default:
+            break;
+        }
+      }
+    );
+
+    // Initialize auth
+    initializeAuth();
+
+    // Cleanup
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
     };
-
-    window.addEventListener('auth:logout', handleLogout);
-    return () => window.removeEventListener('auth:logout', handleLogout);
   }, []);
 
-  // Login function
-  const login = async (credentials: LoginRequest): Promise<boolean> => {
-    console.log('[AUTH] Starting login process...');
+  // Sign in function
+  const signIn = async (credentials: SignInData): Promise<boolean> => {
+    console.log('[AUTH] Starting sign in process...');
     dispatch({ type: 'AUTH_START' });
 
     try {
-      const response = await apiClient.login(credentials);
-      console.log('[AUTH] Login response:', response);
+      const { user, session, error } = await supabaseAuth.signIn(credentials);
 
-      if (response.error) {
-        console.log('[AUTH] Login failed with error:', response.error);
-        dispatch({ type: 'AUTH_FAILURE', payload: response.error.error });
+      if (error) {
+        console.error('[AUTH] Sign in failed:', error);
+        dispatch({ type: 'AUTH_FAILURE', payload: error.message });
         return false;
       }
 
-      if (response.data) {
-        console.log('[AUTH] Login successful, user:', response.data.user);
-        // Ensure user has compatibility fields
-        const user = {
-          ...response.data.user,
-          username: response.data.user.name || response.data.user.username,
-          role: response.data.user.role || 'developer'
-        };
-        console.log('[AUTH] Processed user object:', user);
-        dispatch({ type: 'AUTH_SUCCESS', payload: user });
+      if (user && session) {
+        console.log('[AUTH] Sign in successful:', user.email);
+        dispatch({ type: 'AUTH_SUCCESS', payload: { user, session } });
         return true;
       }
 
-      console.log('[AUTH] Login failed - no data in response');
-      dispatch({ type: 'AUTH_FAILURE', payload: 'Login failed' });
+      console.error('[AUTH] Sign in failed - no user or session returned');
+      dispatch({ type: 'AUTH_FAILURE', payload: 'Sign in failed' });
       return false;
     } catch (error) {
-      console.log('[AUTH] Login exception:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Login failed';
+      console.error('[AUTH] Sign in exception:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Sign in failed';
       dispatch({ type: 'AUTH_FAILURE', payload: errorMessage });
       return false;
     }
   };
 
-  // Logout function
-  const logout = async (): Promise<void> => {
+  // Sign up function
+  const signUp = async (credentials: SignUpData): Promise<boolean> => {
+    console.log('[AUTH] Starting sign up process...');
+    dispatch({ type: 'AUTH_START' });
+
     try {
-      await apiClient.logout();
+      const { user, error } = await supabaseAuth.signUp(credentials);
+
+      if (error) {
+        console.error('[AUTH] Sign up failed:', error);
+        dispatch({ type: 'AUTH_FAILURE', payload: error.message });
+        return false;
+      }
+
+      if (user) {
+        console.log('[AUTH] Sign up successful:', user.email);
+        // Note: User will need to verify email before they can sign in
+        dispatch({ type: 'AUTH_LOGOUT' }); // Clear loading state
+        return true;
+      }
+
+      console.error('[AUTH] Sign up failed - no user returned');
+      dispatch({ type: 'AUTH_FAILURE', payload: 'Sign up failed' });
+      return false;
     } catch (error) {
-      // Even if logout fails on server, clear local state
-      console.warn('Logout request failed:', error);
-    } finally {
-      dispatch({ type: 'AUTH_LOGOUT' });
+      console.error('[AUTH] Sign up exception:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Sign up failed';
+      dispatch({ type: 'AUTH_FAILURE', payload: errorMessage });
+      return false;
+    }
+  };
+
+  // Sign out function
+  const signOut = async (): Promise<void> => {
+    console.log('[AUTH] Starting sign out process...');
+    
+    try {
+      const { error } = await supabaseAuth.signOut();
+      if (error) {
+        console.error('[AUTH] Sign out error:', error);
+        // Still clear local state even if server sign out fails
+      }
+    } catch (error) {
+      console.error('[AUTH] Sign out exception:', error);
+      // Still clear local state even if server sign out fails
+    }
+    
+    // Auth state change listener will handle the logout dispatch
+  };
+
+  // Reset password function
+  const resetPassword = async (data: ResetPasswordData): Promise<boolean> => {
+    console.log('[AUTH] Starting password reset process...');
+    
+    try {
+      const { error } = await supabaseAuth.resetPassword(data);
+
+      if (error) {
+        console.error('[AUTH] Password reset failed:', error);
+        dispatch({ type: 'AUTH_FAILURE', payload: error.message });
+        return false;
+      }
+
+      console.log('[AUTH] Password reset email sent successfully');
+      return true;
+    } catch (error) {
+      console.error('[AUTH] Password reset exception:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Password reset failed';
+      dispatch({ type: 'AUTH_FAILURE', payload: errorMessage });
+      return false;
     }
   };
 
@@ -198,8 +327,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const contextValue: AuthContextType = {
     state,
-    login,
-    logout,
+    signIn,
+    signUp,
+    signOut,
+    resetPassword,
     clearError,
   };
 

@@ -196,6 +196,8 @@ func NewRouter(cfg *config.Config, db *database.DB, redis *queue.RedisClient, re
 			user := protected.Group("/user")
 			{
 				user.GET("/me", authHandler.GetCurrentUserInfo)
+				user.PUT("/me", authHandler.UpdateUserProfile)
+				user.DELETE("/me", authHandler.DeleteUserAccount)
 				user.POST("/refresh", authHandler.RefreshToken)
 			}
 

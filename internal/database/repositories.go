@@ -16,6 +16,7 @@ type UserRepositoryInterface interface {
 	Create(ctx context.Context, user *types.User) error
 	GetByID(ctx context.Context, id uuid.UUID) (*types.User, error)
 	GetByEmail(ctx context.Context, email string) (*types.User, error)
+	GetBySupabaseID(ctx context.Context, supabaseID string) (*types.User, error)
 	Update(ctx context.Context, user *types.User) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	List(ctx context.Context, pagination *Pagination) ([]*types.User, int64, error)
@@ -34,8 +35,8 @@ func NewUserRepository(db *DB) *UserRepository {
 // Create creates a new user
 func (r *UserRepository) Create(ctx context.Context, user *types.User) error {
 	query := `
-		INSERT INTO users (id, email, name, avatar_url, github_id, gitlab_id)
-		VALUES (:id, :email, :name, :avatar_url, :github_id, :gitlab_id)`
+		INSERT INTO users (id, email, name, avatar_url, supabase_id, github_id, gitlab_id)
+		VALUES (:id, :email, :name, :avatar_url, :supabase_id, :github_id, :gitlab_id)`
 
 	if user.ID == uuid.Nil {
 		user.ID = uuid.New()
@@ -83,11 +84,27 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*types.U
 	return &user, nil
 }
 
+// GetBySupabaseID retrieves a user by Supabase ID
+func (r *UserRepository) GetBySupabaseID(ctx context.Context, supabaseID string) (*types.User, error) {
+	var user types.User
+	query := `SELECT * FROM users WHERE supabase_id = $1`
+
+	err := r.db.GetContext(ctx, &user, query, supabaseID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, errors.NewNotFoundError("user")
+		}
+		return nil, errors.NewInternalError("failed to get user by Supabase ID").WithCause(err)
+	}
+
+	return &user, nil
+}
+
 // Update updates a user
 func (r *UserRepository) Update(ctx context.Context, user *types.User) error {
 	query := `
 		UPDATE users 
-		SET name = :name, avatar_url = :avatar_url, updated_at = NOW()
+		SET name = :name, avatar_url = :avatar_url, supabase_id = :supabase_id, updated_at = NOW()
 		WHERE id = :id`
 
 	result, err := r.db.NamedExecContext(ctx, query, user)

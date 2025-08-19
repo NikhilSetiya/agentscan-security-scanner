@@ -5,7 +5,6 @@
 
 import { supabase } from '../lib/supabase'
 import type { 
-  AuthResponse, 
   AuthError, 
   User, 
   Session,

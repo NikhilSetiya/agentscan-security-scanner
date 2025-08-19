@@ -18,7 +18,6 @@ import {
   RefreshCw, 
   Wifi, 
   WifiOff,
-  Settings,
   Bug
 } from 'lucide-react'
 
