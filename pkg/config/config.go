@@ -67,12 +67,13 @@ type AgentsConfig struct {
 
 // AuthConfig contains authentication configuration
 type AuthConfig struct {
-	JWTSecret       string        `json:"jwt_secret"`
-	JWTExpiration   time.Duration `json:"jwt_expiration"`
-	GitHubClientID  string        `json:"github_client_id"`
-	GitHubSecret    string        `json:"github_secret"`
-	GitLabClientID  string        `json:"gitlab_client_id"`
-	GitLabSecret    string        `json:"gitlab_secret"`
+	JWTSecret        string        `json:"jwt_secret"`
+	JWTExpiration    time.Duration `json:"jwt_expiration"`
+	GitHubClientID   string        `json:"github_client_id"`
+	GitHubSecret     string        `json:"github_secret"`
+	GitLabClientID   string        `json:"gitlab_client_id"`
+	GitLabSecret     string        `json:"gitlab_secret"`
+	OAuthRedirectURI string        `json:"oauth_redirect_uri"`
 }
 
 // GitHubConfig holds GitHub App configuration
@@ -146,12 +147,13 @@ func Load() (*Config, error) {
 			MaxCPUCores:    getEnvFloat("AGENTS_MAX_CPU_CORES", 1.0),
 		},
 		Auth: AuthConfig{
-			JWTSecret:      getEnvString("JWT_SECRET", ""),
-			JWTExpiration:  getEnvDuration("JWT_EXPIRATION", 24*time.Hour),
-			GitHubClientID: getEnvString("GITHUB_CLIENT_ID", ""),
-			GitHubSecret:   getEnvString("GITHUB_SECRET", ""),
-			GitLabClientID: getEnvString("GITLAB_CLIENT_ID", ""),
-			GitLabSecret:   getEnvString("GITLAB_SECRET", ""),
+			JWTSecret:        getEnvString("JWT_SECRET", ""),
+			JWTExpiration:    getEnvDuration("JWT_EXPIRATION", 24*time.Hour),
+			GitHubClientID:   getEnvString("GITHUB_CLIENT_ID", ""),
+			GitHubSecret:     getEnvString("GITHUB_SECRET", ""),
+			GitLabClientID:   getEnvString("GITLAB_CLIENT_ID", ""),
+			GitLabSecret:     getEnvString("GITLAB_SECRET", ""),
+			OAuthRedirectURI: getEnvString("OAUTH_REDIRECT_URI", "https://frontend-ndof17ozo-nikhilsetiyas-projects.vercel.app/auth/callback"),
 		},
 		Logging: LoggingConfig{
 			Level:  getEnvString("LOG_LEVEL", "info"),

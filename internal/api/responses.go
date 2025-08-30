@@ -14,19 +14,26 @@ import (
 
 // APIResponse represents a standard API response
 type APIResponse struct {
-	Success   bool        `json:"success"`
-	Data      interface{} `json:"data,omitempty"`
-	Error     *APIError   `json:"error,omitempty"`
-	Meta      *Meta       `json:"meta,omitempty"`
-	RequestID string      `json:"request_id,omitempty"`
-	Timestamp time.Time   `json:"timestamp"`
+	Success       bool        `json:"success"`
+	Data          interface{} `json:"data,omitempty"`
+	Error         *APIError   `json:"error,omitempty"`
+	Meta          *Meta       `json:"meta,omitempty"`
+	RequestID     string      `json:"request_id,omitempty"`
+	CorrelationID string      `json:"correlation_id,omitempty"`
+	Timestamp     time.Time   `json:"timestamp"`
+	Version       string      `json:"version,omitempty"`
 }
 
 // APIError represents an API error with enhanced details support
 type APIError struct {
-	Code    string                 `json:"code"`
-	Message string                 `json:"message"`
-	Details map[string]interface{} `json:"details,omitempty"`
+	Code          string                 `json:"code"`
+	Message       string                 `json:"message"`
+	Details       map[string]interface{} `json:"details,omitempty"`
+	Type          string                 `json:"type,omitempty"`
+	RequestID     string                 `json:"request_id,omitempty"`
+	CorrelationID string                 `json:"correlation_id,omitempty"`
+	Timestamp     time.Time              `json:"timestamp"`
+	Stack         []string               `json:"stack,omitempty"`
 }
 
 // Meta represents response metadata with enhanced pagination support
@@ -51,21 +58,34 @@ type ErrorResponse struct {
 	Message string `json:"message"`
 }
 
-// SuccessResponse sends a successful response
-func SuccessResponse(c *gin.Context, data interface{}) {
-	requestID, exists := c.Get("request_id")
-	requestIDStr := ""
-	if exists {
-		if id, ok := requestID.(string); ok {
-			requestIDStr = id
+// getContextInfo extracts request and correlation IDs from context
+func getContextInfo(c *gin.Context) (requestID, correlationID string) {
+	if id, exists := c.Get("request_id"); exists {
+		if idStr, ok := id.(string); ok {
+			requestID = idStr
 		}
 	}
 	
+	if id, exists := c.Get("correlation_id"); exists {
+		if idStr, ok := id.(string); ok {
+			correlationID = idStr
+		}
+	}
+	
+	return requestID, correlationID
+}
+
+// SuccessResponse sends a successful response
+func SuccessResponse(c *gin.Context, data interface{}) {
+	requestID, correlationID := getContextInfo(c)
+	
 	response := APIResponse{
-		Success:   true,
-		Data:      data,
-		RequestID: requestIDStr,
-		Timestamp: time.Now(),
+		Success:       true,
+		Data:          data,
+		RequestID:     requestID,
+		CorrelationID: correlationID,
+		Timestamp:     time.Now(),
+		Version:       "v1",
 	}
 	
 	c.JSON(http.StatusOK, response)
@@ -73,13 +93,7 @@ func SuccessResponse(c *gin.Context, data interface{}) {
 
 // SuccessResponseWithMeta sends a successful response with metadata
 func SuccessResponseWithMeta(c *gin.Context, data interface{}, meta *Meta) {
-	requestID, exists := c.Get("request_id")
-	requestIDStr := ""
-	if exists {
-		if id, ok := requestID.(string); ok {
-			requestIDStr = id
-		}
-	}
+	requestID, correlationID := getContextInfo(c)
 	
 	// Ensure meta has timestamp
 	if meta != nil {
@@ -87,11 +101,13 @@ func SuccessResponseWithMeta(c *gin.Context, data interface{}, meta *Meta) {
 	}
 	
 	response := APIResponse{
-		Success:   true,
-		Data:      data,
-		Meta:      meta,
-		RequestID: requestIDStr,
-		Timestamp: time.Now(),
+		Success:       true,
+		Data:          data,
+		Meta:          meta,
+		RequestID:     requestID,
+		CorrelationID: correlationID,
+		Timestamp:     time.Now(),
+		Version:       "v1",
 	}
 	
 	c.JSON(http.StatusOK, response)
@@ -99,19 +115,15 @@ func SuccessResponseWithMeta(c *gin.Context, data interface{}, meta *Meta) {
 
 // CreatedResponse sends a 201 Created response
 func CreatedResponse(c *gin.Context, data interface{}) {
-	requestID, exists := c.Get("request_id")
-	requestIDStr := ""
-	if exists {
-		if id, ok := requestID.(string); ok {
-			requestIDStr = id
-		}
-	}
+	requestID, correlationID := getContextInfo(c)
 	
 	response := APIResponse{
-		Success:   true,
-		Data:      data,
-		RequestID: requestIDStr,
-		Timestamp: time.Now(),
+		Success:       true,
+		Data:          data,
+		RequestID:     requestID,
+		CorrelationID: correlationID,
+		Timestamp:     time.Now(),
+		Version:       "v1",
 	}
 	
 	c.JSON(http.StatusCreated, response)
@@ -119,63 +131,108 @@ func CreatedResponse(c *gin.Context, data interface{}) {
 
 // ErrorResponseFromError sends an error response based on the error type
 func ErrorResponseFromError(c *gin.Context, err error) {
-	requestID, exists := c.Get("request_id")
-	requestIDStr := ""
-	if exists {
-		if id, ok := requestID.(string); ok {
-			requestIDStr = id
-		}
-	}
+	requestID, correlationID := getContextInfo(c)
 	
 	var statusCode int
 	var apiError *APIError
 	
 	switch e := err.(type) {
 	case *errors.AppError:
-		switch e.Type {
-		case errors.ErrorTypeValidation:
-			statusCode = http.StatusBadRequest
-		case errors.ErrorTypeAuthentication:
-			statusCode = http.StatusUnauthorized
-		case errors.ErrorTypeAuthorization:
-			statusCode = http.StatusForbidden
-		case errors.ErrorTypeNotFound:
-			statusCode = http.StatusNotFound
-		case errors.ErrorTypeConflict:
-			statusCode = http.StatusConflict
-		case errors.ErrorTypeRateLimit:
-			statusCode = http.StatusTooManyRequests
-		case errors.ErrorTypeTimeout:
-			statusCode = http.StatusRequestTimeout
-		default:
-			statusCode = http.StatusInternalServerError
-		}
+		statusCode = mapErrorTypeToHTTPStatus(e.Type)
 		
 		apiError = &APIError{
-			Code:    e.Code,
-			Message: e.Message,
+			Code:          e.Code,
+			Message:       e.Message,
+			Type:          string(e.Type),
+			RequestID:     requestID,
+			CorrelationID: correlationID,
+			Timestamp:     time.Now(),
 		}
 		
-		// Add details if available - now using map[string]interface{}
+		// Add details if available
 		if len(e.Details) > 0 {
 			apiError.Details = make(map[string]interface{})
 			for k, v := range e.Details {
 				apiError.Details[k] = v
 			}
 		}
+		
+		// Add stack trace for internal errors in debug mode
+		if e.Type == errors.ErrorTypeInternal && len(e.Stack) > 0 {
+			apiError.Stack = e.Stack
+		}
+		
 	default:
 		statusCode = http.StatusInternalServerError
 		apiError = &APIError{
-			Code:    "UNKNOWN_ERROR",
-			Message: "An unknown error occurred",
+			Code:          "UNKNOWN_ERROR",
+			Message:       "An unknown error occurred",
+			Type:          string(errors.ErrorTypeInternal),
+			RequestID:     requestID,
+			CorrelationID: correlationID,
+			Timestamp:     time.Now(),
 		}
 	}
 	
 	response := APIResponse{
-		Success:   false,
-		Error:     apiError,
-		RequestID: requestIDStr,
-		Timestamp: time.Now(),
+		Success:       false,
+		Error:         apiError,
+		RequestID:     requestID,
+		CorrelationID: correlationID,
+		Timestamp:     time.Now(),
+		Version:       "v1",
+	}
+	
+	c.JSON(statusCode, response)
+}
+
+// mapErrorTypeToHTTPStatus maps error types to HTTP status codes
+func mapErrorTypeToHTTPStatus(errorType errors.ErrorType) int {
+	switch errorType {
+	case errors.ErrorTypeValidation:
+		return http.StatusBadRequest
+	case errors.ErrorTypeAuthentication:
+		return http.StatusUnauthorized
+	case errors.ErrorTypeAuthorization:
+		return http.StatusForbidden
+	case errors.ErrorTypeNotFound:
+		return http.StatusNotFound
+	case errors.ErrorTypeConflict:
+		return http.StatusConflict
+	case errors.ErrorTypeRateLimit:
+		return http.StatusTooManyRequests
+	case errors.ErrorTypeTimeout:
+		return http.StatusRequestTimeout
+	case errors.ErrorTypeExternal:
+		return http.StatusBadGateway
+	case errors.ErrorTypeSecurity:
+		return http.StatusForbidden
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
+// createErrorResponse creates a standardized error response
+func createErrorResponse(c *gin.Context, statusCode int, code, message string, errorType errors.ErrorType, details map[string]interface{}) {
+	requestID, correlationID := getContextInfo(c)
+	
+	apiError := &APIError{
+		Code:          code,
+		Message:       message,
+		Type:          string(errorType),
+		RequestID:     requestID,
+		CorrelationID: correlationID,
+		Timestamp:     time.Now(),
+		Details:       details,
+	}
+	
+	response := APIResponse{
+		Success:       false,
+		Error:         apiError,
+		RequestID:     requestID,
+		CorrelationID: correlationID,
+		Timestamp:     time.Now(),
+		Version:       "v1",
 	}
 	
 	c.JSON(statusCode, response)
@@ -183,187 +240,42 @@ func ErrorResponseFromError(c *gin.Context, err error) {
 
 // BadRequestResponse sends a 400 Bad Request response
 func BadRequestResponse(c *gin.Context, message string) {
-	requestID, exists := c.Get("request_id")
-	requestIDStr := ""
-	if exists {
-		if id, ok := requestID.(string); ok {
-			requestIDStr = id
-		}
-	}
-	
-	response := APIResponse{
-		Success: false,
-		Error: &APIError{
-			Code:    "BAD_REQUEST",
-			Message: message,
-		},
-		RequestID: requestIDStr,
-		Timestamp: time.Now(),
-	}
-	
-	c.JSON(http.StatusBadRequest, response)
+	createErrorResponse(c, http.StatusBadRequest, "BAD_REQUEST", message, errors.ErrorTypeValidation, nil)
 }
 
 // UnauthorizedResponse sends a 401 Unauthorized response
 func UnauthorizedResponse(c *gin.Context, message string) {
-	requestID, exists := c.Get("request_id")
-	requestIDStr := ""
-	if exists {
-		if id, ok := requestID.(string); ok {
-			requestIDStr = id
-		}
-	}
-	
-	response := APIResponse{
-		Success: false,
-		Error: &APIError{
-			Code:    "UNAUTHORIZED",
-			Message: message,
-		},
-		RequestID: requestIDStr,
-		Timestamp: time.Now(),
-	}
-	
-	c.JSON(http.StatusUnauthorized, response)
+	createErrorResponse(c, http.StatusUnauthorized, "UNAUTHORIZED", message, errors.ErrorTypeAuthentication, nil)
 }
 
 // ForbiddenResponse sends a 403 Forbidden response
 func ForbiddenResponse(c *gin.Context, message string) {
-	requestID, exists := c.Get("request_id")
-	requestIDStr := ""
-	if exists {
-		if id, ok := requestID.(string); ok {
-			requestIDStr = id
-		}
-	}
-	
-	response := APIResponse{
-		Success: false,
-		Error: &APIError{
-			Code:    "FORBIDDEN",
-			Message: message,
-		},
-		RequestID: requestIDStr,
-		Timestamp: time.Now(),
-	}
-	
-	c.JSON(http.StatusForbidden, response)
+	createErrorResponse(c, http.StatusForbidden, "FORBIDDEN", message, errors.ErrorTypeAuthorization, nil)
 }
 
 // NotFoundResponse sends a 404 Not Found response
 func NotFoundResponse(c *gin.Context, message string) {
-	requestID, exists := c.Get("request_id")
-	requestIDStr := ""
-	if exists {
-		if id, ok := requestID.(string); ok {
-			requestIDStr = id
-		}
-	}
-	
-	response := APIResponse{
-		Success: false,
-		Error: &APIError{
-			Code:    "NOT_FOUND",
-			Message: message,
-		},
-		RequestID: requestIDStr,
-		Timestamp: time.Now(),
-	}
-	
-	c.JSON(http.StatusNotFound, response)
+	createErrorResponse(c, http.StatusNotFound, "NOT_FOUND", message, errors.ErrorTypeNotFound, nil)
 }
 
 // InternalErrorResponse sends a 500 Internal Server Error response
 func InternalErrorResponse(c *gin.Context, message string) {
-	requestID, exists := c.Get("request_id")
-	requestIDStr := ""
-	if exists {
-		if id, ok := requestID.(string); ok {
-			requestIDStr = id
-		}
-	}
-	
-	response := APIResponse{
-		Success: false,
-		Error: &APIError{
-			Code:    "INTERNAL_ERROR",
-			Message: message,
-		},
-		RequestID: requestIDStr,
-		Timestamp: time.Now(),
-	}
-	
-	c.JSON(http.StatusInternalServerError, response)
+	createErrorResponse(c, http.StatusInternalServerError, "INTERNAL_ERROR", message, errors.ErrorTypeInternal, nil)
 }
 
 // ValidationErrorResponse sends a 400 Bad Request response with validation details
 func ValidationErrorResponse(c *gin.Context, message string, details map[string]interface{}) {
-	requestID, exists := c.Get("request_id")
-	requestIDStr := ""
-	if exists {
-		if id, ok := requestID.(string); ok {
-			requestIDStr = id
-		}
-	}
-	
-	response := APIResponse{
-		Success: false,
-		Error: &APIError{
-			Code:    "VALIDATION_ERROR",
-			Message: message,
-			Details: details,
-		},
-		RequestID: requestIDStr,
-		Timestamp: time.Now(),
-	}
-	
-	c.JSON(http.StatusBadRequest, response)
+	createErrorResponse(c, http.StatusBadRequest, "VALIDATION_ERROR", message, errors.ErrorTypeValidation, details)
 }
 
 // ConflictResponse sends a 409 Conflict response
 func ConflictResponse(c *gin.Context, message string) {
-	requestID, exists := c.Get("request_id")
-	requestIDStr := ""
-	if exists {
-		if id, ok := requestID.(string); ok {
-			requestIDStr = id
-		}
-	}
-	
-	response := APIResponse{
-		Success: false,
-		Error: &APIError{
-			Code:    "CONFLICT",
-			Message: message,
-		},
-		RequestID: requestIDStr,
-		Timestamp: time.Now(),
-	}
-	
-	c.JSON(http.StatusConflict, response)
+	createErrorResponse(c, http.StatusConflict, "CONFLICT", message, errors.ErrorTypeConflict, nil)
 }
 
 // TooManyRequestsResponse sends a 429 Too Many Requests response
 func TooManyRequestsResponse(c *gin.Context, message string) {
-	requestID, exists := c.Get("request_id")
-	requestIDStr := ""
-	if exists {
-		if id, ok := requestID.(string); ok {
-			requestIDStr = id
-		}
-	}
-	
-	response := APIResponse{
-		Success: false,
-		Error: &APIError{
-			Code:    "RATE_LIMIT_EXCEEDED",
-			Message: message,
-		},
-		RequestID: requestIDStr,
-		Timestamp: time.Now(),
-	}
-	
-	c.JSON(http.StatusTooManyRequests, response)
+	createErrorResponse(c, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", message, errors.ErrorTypeRateLimit, nil)
 }
 
 // Helper functions for pagination
@@ -468,22 +380,22 @@ type FindingDTO struct {
 
 // CreateScanJobRequest represents a request to create a scan job
 type CreateScanJobRequest struct {
-	RepositoryURL   string   `json:"repository_url" binding:"required,url"`
-	Branch          string   `json:"branch"`
-	CommitSHA       string   `json:"commit_sha"`
-	ScanType        string   `json:"scan_type" binding:"required,oneof=full incremental ide"`
-	Priority        int      `json:"priority" binding:"min=1,max=10"`
-	AgentsRequested []string `json:"agents_requested"`
+	RepositoryURL   string   `json:"repository_url" binding:"required,url" validate:"required,repository_url"`
+	Branch          string   `json:"branch" validate:"omitempty,min=1,max=100,safe_string,no_sql_injection"`
+	CommitSHA       string   `json:"commit_sha" validate:"omitempty,min=1,max=100,safe_string,no_sql_injection"`
+	ScanType        string   `json:"scan_type" binding:"required,oneof=full incremental ide" validate:"required,scan_type"`
+	Priority        int      `json:"priority" binding:"min=1,max=10" validate:"min=1,max=10"`
+	AgentsRequested []string `json:"agents_requested" validate:"omitempty,dive,safe_string,no_sql_injection"`
 }
 
 // UpdateScanJobStatusRequest represents a request to update scan job status
 type UpdateScanJobStatusRequest struct {
-	Status string `json:"status" binding:"required,oneof=queued running completed failed cancelled"`
+	Status string `json:"status" binding:"required,oneof=queued running completed failed cancelled" validate:"required,oneof=queued running completed failed cancelled"`
 }
 
 // UpdateFindingStatusRequest represents a request to update finding status
 type UpdateFindingStatusRequest struct {
-	Status string `json:"status" binding:"required,oneof=open fixed ignored false_positive"`
+	Status string `json:"status" binding:"required,oneof=open fixed ignored false_positive" validate:"required,oneof=open fixed ignored false_positive"`
 }
 
 // Conversion functions

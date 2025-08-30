@@ -351,42 +351,24 @@ func (r *ScanJobRepository) List(ctx context.Context, filter *ScanJobFilter, pag
 	var jobs []*types.ScanJob
 	var total int64
 
-	// Build WHERE clause
-	whereClause := "WHERE 1=1"
-	args := make(map[string]interface{})
-	
-	if filter.RepositoryID != nil {
-		whereClause += " AND repository_id = :repository_id"
-		args["repository_id"] = *filter.RepositoryID
-	}
-	
-	if filter.UserID != nil {
-		whereClause += " AND user_id = :user_id"
-		args["user_id"] = *filter.UserID
-	}
-	
-	if filter.Status != "" {
-		whereClause += " AND status = :status"
-		args["status"] = filter.Status
-	}
-	
-	if filter.ScanType != "" {
-		whereClause += " AND scan_type = :scan_type"
-		args["scan_type"] = filter.ScanType
-	}
+	// Build secure query using query builder
+	qb := NewQueryBuilder("SELECT * FROM scan_jobs").
+		WhereUUID("repository_id = :repository_id", "repository_id", filter.RepositoryID).
+		WhereUUID("user_id = :user_id", "user_id", filter.UserID).
+		Where("status = :status", "status", filter.Status).
+		Where("scan_type = :scan_type", "scan_type", filter.ScanType).
+		OrderBy("created_at DESC").
+		Limit(pagination.PageSize).
+		Offset((pagination.Page - 1) * pagination.PageSize)
 
-	// Count total records
-	countQuery := "SELECT COUNT(*) FROM scan_jobs " + whereClause
-	if err := r.db.GetContext(ctx, &total, countQuery, args); err != nil {
+	// Get count using secure query builder
+	countQuery, countArgs := qb.BuildCount()
+	if err := r.db.GetContext(ctx, &total, countQuery, countArgs); err != nil {
 		return nil, 0, errors.NewInternalError("failed to count scan jobs").WithCause(err)
 	}
 
-	// Get paginated results
-	offset := (pagination.Page - 1) * pagination.PageSize
-	query := `SELECT * FROM scan_jobs ` + whereClause + ` ORDER BY created_at DESC LIMIT :limit OFFSET :offset`
-	args["limit"] = pagination.PageSize
-	args["offset"] = offset
-
+	// Get paginated results using secure query builder
+	query, args := qb.Build()
 	rows, err := r.db.NamedQueryContext(ctx, query, args)
 	if err != nil {
 		return nil, 0, errors.NewInternalError("failed to list scan jobs").WithCause(err)
@@ -516,47 +498,25 @@ func (r *FindingRepository) List(ctx context.Context, filter *FindingFilter, pag
 	var findings []*types.Finding
 	var total int64
 
-	// Build WHERE clause
-	whereClause := "WHERE 1=1"
-	args := make(map[string]interface{})
-	
-	if filter.Severity != "" {
-		whereClause += " AND severity = :severity"
-		args["severity"] = filter.Severity
-	}
-	
-	if filter.Tool != "" {
-		whereClause += " AND tool = :tool"
-		args["tool"] = filter.Tool
-	}
-	
-	if filter.Category != "" {
-		whereClause += " AND category = :category"
-		args["category"] = filter.Category
-	}
-	
-	if filter.Status != "" {
-		whereClause += " AND status = :status"
-		args["status"] = filter.Status
-	}
-	
-	if filter.File != "" {
-		whereClause += " AND file_path ILIKE :file_path"
-		args["file_path"] = "%" + filter.File + "%"
-	}
+	// Build secure query using query builder
+	qb := NewQueryBuilder("SELECT * FROM findings").
+		Where("severity = :severity", "severity", filter.Severity).
+		Where("tool = :tool", "tool", filter.Tool).
+		Where("category = :category", "category", filter.Category).
+		Where("status = :status", "status", filter.Status).
+		WhereLike("file_path ILIKE :file_path", "file_path", filter.File).
+		OrderBy("severity DESC").
+		Limit(pagination.PageSize).
+		Offset((pagination.Page - 1) * pagination.PageSize)
 
-	// Count total records
-	countQuery := "SELECT COUNT(*) FROM findings " + whereClause
-	if err := r.db.GetContext(ctx, &total, countQuery, args); err != nil {
+	// Get count using secure query builder
+	countQuery, countArgs := qb.BuildCount()
+	if err := r.db.GetContext(ctx, &total, countQuery, countArgs); err != nil {
 		return nil, 0, errors.NewInternalError("failed to count findings").WithCause(err)
 	}
 
-	// Get paginated results
-	offset := (pagination.Page - 1) * pagination.PageSize
-	query := `SELECT * FROM findings ` + whereClause + ` ORDER BY severity DESC, created_at DESC LIMIT :limit OFFSET :offset`
-	args["limit"] = pagination.PageSize
-	args["offset"] = offset
-
+	// Get paginated results using secure query builder
+	query, args := qb.Build()
 	rows, err := r.db.NamedQueryContext(ctx, query, args)
 	if err != nil {
 		return nil, 0, errors.NewInternalError("failed to list findings").WithCause(err)
@@ -705,27 +665,22 @@ func (r *RepositoryRepository) List(ctx context.Context, orgID *uuid.UUID, pagin
 	var repos []*types.Repository
 	var total int64
 
-	// Build WHERE clause
-	whereClause := "WHERE is_active = true"
-	args := make(map[string]interface{})
-	
-	if orgID != nil {
-		whereClause += " AND organization_id = :organization_id"
-		args["organization_id"] = *orgID
-	}
+	// Build secure query using query builder
+	qb := NewQueryBuilder("SELECT * FROM repositories").
+		Where("is_active = :is_active", "is_active", true).
+		WhereUUID("organization_id = :organization_id", "organization_id", orgID).
+		OrderBy("name ASC").
+		Limit(pagination.PageSize).
+		Offset((pagination.Page - 1) * pagination.PageSize)
 
-	// Get total count
-	countQuery := "SELECT COUNT(*) FROM repositories " + whereClause
-	if err := r.db.GetContext(ctx, &total, countQuery, args); err != nil {
+	// Get count using secure query builder
+	countQuery, countArgs := qb.BuildCount()
+	if err := r.db.GetContext(ctx, &total, countQuery, countArgs); err != nil {
 		return nil, 0, errors.NewInternalError("failed to count repositories").WithCause(err)
 	}
 
-	// Get paginated results
-	offset := (pagination.Page - 1) * pagination.PageSize
-	query := `SELECT * FROM repositories ` + whereClause + ` ORDER BY name ASC LIMIT :limit OFFSET :offset`
-	args["limit"] = pagination.PageSize
-	args["offset"] = offset
-
+	// Get paginated results using secure query builder
+	query, args := qb.Build()
 	rows, err := r.db.NamedQueryContext(ctx, query, args)
 	if err != nil {
 		return nil, 0, errors.NewInternalError("failed to list repositories").WithCause(err)
@@ -747,16 +702,13 @@ func (r *RepositoryRepository) List(ctx context.Context, orgID *uuid.UUID, pagin
 func (r *RepositoryRepository) ListActive(ctx context.Context, orgID *uuid.UUID) ([]*types.Repository, error) {
 	var repos []*types.Repository
 	
-	whereClause := "WHERE is_active = true"
-	args := make(map[string]interface{})
-	
-	if orgID != nil {
-		whereClause += " AND organization_id = :organization_id"
-		args["organization_id"] = *orgID
-	}
+	// Build secure query using query builder
+	qb := NewQueryBuilder("SELECT * FROM repositories").
+		Where("is_active = :is_active", "is_active", true).
+		WhereUUID("organization_id = :organization_id", "organization_id", orgID).
+		OrderBy("name ASC")
 
-	query := `SELECT * FROM repositories ` + whereClause + ` ORDER BY name ASC`
-
+	query, args := qb.Build()
 	rows, err := r.db.NamedQueryContext(ctx, query, args)
 	if err != nil {
 		return nil, errors.NewInternalError("failed to list active repositories").WithCause(err)

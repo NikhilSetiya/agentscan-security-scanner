@@ -2,7 +2,7 @@
 
 ## Introduction
 
-The AgentScan Security Scanner application has been deployed to production with the backend on fly.io and frontend on Vercel, but there are critical issues preventing proper functionality. The system currently shows dummy data, has broken API connectivity, non-functional authentication, poor UI/UX, and insecure secrets management. The system needs comprehensive fixes including Supabase authentication integration, proper secrets management, functional scan creation, and a complete UI overhaul to ensure production readiness. This spec addresses all identified issues to make the application fully functional for end users.
+After conducting a comprehensive senior software engineer review of the AgentScan Security Scanner codebase, critical architectural and security issues have been identified that prevent production readiness. The application has been deployed with the backend on fly.io and frontend on Vercel, but suffers from massive code duplication (40%+ in API layer), inconsistent error handling across layers, security vulnerabilities including potential SQL injection, performance bottlenecks with N+1 query problems, and conflicting deployment configurations. The system requires systematic refactoring to implement clean architecture patterns, standardize error handling, fix security vulnerabilities, optimize database operations, and consolidate deployment strategies. This spec addresses all identified critical issues to transform the codebase into a production-ready, enterprise-grade security scanning platform.
 
 ## Requirements
 
@@ -144,3 +144,88 @@ The AgentScan Security Scanner application has been deployed to production with 
 3. WHEN I view scan results THEN I SHALL see real findings from security tools
 4. WHEN I view charts and graphs THEN they SHALL display actual trend data
 5. WHEN no data exists THEN I SHALL see appropriate empty states with guidance
+
+### Requirement 12: Code Duplication Elimination and API Refactoring
+
+**User Story:** As a developer, I want the API layer to be maintainable and consistent so that adding new features and fixing bugs is efficient and reliable.
+
+#### Acceptance Criteria
+
+1. WHEN common patterns are identified THEN they SHALL be extracted into reusable middleware and utilities
+2. WHEN user authentication is needed THEN it SHALL use a single, consistent authentication middleware
+3. WHEN pagination is required THEN it SHALL use a standardized pagination utility function
+4. WHEN UUID parameters are parsed THEN it SHALL use a common parameter parsing utility
+5. WHEN API responses are sent THEN they SHALL use consistent response wrapper functions
+6. WHEN validation is performed THEN it SHALL use standardized validation middleware
+7. WHEN the codebase is analyzed THEN code duplication SHALL be reduced from 40% to under 10%
+
+### Requirement 13: Security Vulnerability Remediation
+
+**User Story:** As a security administrator, I want the application to be secure against common attacks so that user data and system integrity are protected.
+
+#### Acceptance Criteria
+
+1. WHEN SQL queries are constructed THEN they SHALL use parameterized queries to prevent SQL injection
+2. WHEN user input is processed THEN it SHALL be properly validated and sanitized
+3. WHEN authentication is required THEN all endpoints SHALL consistently enforce authentication
+4. WHEN rate limiting is needed THEN it SHALL be implemented on all public endpoints
+5. WHEN RBAC is required THEN proper role-based access control SHALL be implemented
+6. WHEN security headers are set THEN they SHALL follow OWASP security guidelines
+7. WHEN sensitive data is logged THEN it SHALL be properly masked or excluded
+8. WHEN CORS is configured THEN it SHALL only allow authorized origins
+
+### Requirement 14: Database Performance Optimization
+
+**User Story:** As a user, I want the application to respond quickly so that I can efficiently manage my security scanning workflow.
+
+#### Acceptance Criteria
+
+1. WHEN database queries are executed THEN they SHALL use proper indexes on frequently queried columns
+2. WHEN N+1 query problems exist THEN they SHALL be resolved using JOIN queries or eager loading
+3. WHEN pagination is implemented THEN it SHALL use efficient offset/limit strategies
+4. WHEN dashboard statistics are calculated THEN they SHALL use optimized aggregate queries
+5. WHEN scan results are retrieved THEN they SHALL use database views for complex queries
+6. WHEN query performance is measured THEN response times SHALL be under 200ms for 95% of requests
+7. WHEN database connections are managed THEN they SHALL use proper connection pooling
+
+### Requirement 15: Deployment Configuration Consolidation
+
+**User Story:** As a DevOps engineer, I want a clear and consistent deployment strategy so that deployments are reliable and maintainable.
+
+#### Acceptance Criteria
+
+1. WHEN deployment configurations exist THEN there SHALL be one primary configuration per environment
+2. WHEN Docker images are built THEN they SHALL use consistent base images and build processes
+3. WHEN environment variables are set THEN they SHALL be clearly documented and validated
+4. WHEN deployment scripts are used THEN they SHALL be idempotent and error-resistant
+5. WHEN health checks are performed THEN they SHALL be consistent across all services
+6. WHEN monitoring is configured THEN it SHALL provide comprehensive observability
+7. WHEN rollback is needed THEN it SHALL be automated and reliable
+
+### Requirement 16: Error Handling Standardization
+
+**User Story:** As a developer, I want consistent error handling across all layers so that debugging and error resolution is efficient.
+
+#### Acceptance Criteria
+
+1. WHEN errors occur in the backend THEN they SHALL use standardized error types and structures
+2. WHEN errors are returned to the frontend THEN they SHALL use consistent API error format
+3. WHEN errors are displayed to users THEN they SHALL show user-friendly messages
+4. WHEN errors are logged THEN they SHALL include proper context and correlation IDs
+5. WHEN error details are needed THEN they SHALL use map[string]interface{} for flexibility
+6. WHEN error codes are assigned THEN they SHALL follow a consistent naming convention
+7. WHEN error handling is tested THEN it SHALL cover all error scenarios
+
+### Requirement 17: Architecture Modernization
+
+**User Story:** As a software architect, I want the codebase to follow clean architecture principles so that it is maintainable, testable, and scalable.
+
+#### Acceptance Criteria
+
+1. WHEN business logic is implemented THEN it SHALL be separated from infrastructure concerns
+2. WHEN dependencies are managed THEN they SHALL follow dependency inversion principles
+3. WHEN interfaces are defined THEN they SHALL be consistent and well-documented
+4. WHEN layers communicate THEN they SHALL use proper abstraction boundaries
+5. WHEN new features are added THEN they SHALL follow established architectural patterns
+6. WHEN code is organized THEN it SHALL follow domain-driven design principles
+7. WHEN testing is performed THEN architecture SHALL support comprehensive unit and integration testing

@@ -29,19 +29,19 @@ func NewRepositoryHandler(repos *database.Repositories) *RepositoryHandler {
 
 // CreateRepositoryRequest represents a request to create a repository
 type CreateRepositoryRequest struct {
-	Name        string `json:"name" binding:"required,min=1,max=255"`
-	URL         string `json:"url" binding:"required,url"`
-	Language    string `json:"language" binding:"required,min=1,max=100"`
-	Branch      string `json:"branch"`
-	Description string `json:"description"`
+	Name        string `json:"name" binding:"required,min=1,max=255" validate:"required,min=1,max=255,safe_string,no_sql_injection"`
+	URL         string `json:"url" binding:"required,url" validate:"required,repository_url"`
+	Language    string `json:"language" binding:"required,min=1,max=100" validate:"required,min=1,max=100,safe_string,no_sql_injection"`
+	Branch      string `json:"branch" validate:"omitempty,min=1,max=100,safe_string,no_sql_injection"`
+	Description string `json:"description" validate:"omitempty,max=1000,safe_string,no_sql_injection"`
 }
 
 // UpdateRepositoryRequest represents a request to update a repository
 type UpdateRepositoryRequest struct {
-	Name        string `json:"name" binding:"required,min=1,max=255"`
-	Language    string `json:"language" binding:"required,min=1,max=100"`
-	Branch      string `json:"branch"`
-	Description string `json:"description"`
+	Name        string `json:"name" binding:"required,min=1,max=255" validate:"required,min=1,max=255,safe_string,no_sql_injection"`
+	Language    string `json:"language" binding:"required,min=1,max=100" validate:"required,min=1,max=100,safe_string,no_sql_injection"`
+	Branch      string `json:"branch" validate:"omitempty,min=1,max=100,safe_string,no_sql_injection"`
+	Description string `json:"description" validate:"omitempty,max=1000,safe_string,no_sql_injection"`
 }
 
 // ListRepositories retrieves a paginated list of repositories

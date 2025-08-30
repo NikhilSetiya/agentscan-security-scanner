@@ -6,6 +6,40 @@
 import { ApiError } from '../services/api';
 import { observeLogger } from '../services/observeLogger';
 
+// Enhanced API error interface to match new backend format
+export interface BackendApiError {
+  code: string;
+  message: string;
+  type?: string;
+  details?: Record<string, any>;
+  request_id?: string;
+  correlation_id?: string;
+  timestamp?: string;
+  stack?: string[];
+}
+
+// Standard API response format from backend
+export interface ApiResponse<T = any> {
+  success: boolean;
+  data?: T;
+  error?: BackendApiError;
+  meta?: {
+    pagination?: {
+      page: number;
+      page_size: number;
+      total: number;
+      total_pages: number;
+      has_next: boolean;
+      has_prev: boolean;
+    };
+    timestamp: string;
+  };
+  request_id?: string;
+  correlation_id?: string;
+  timestamp: string;
+  version?: string;
+}
+
 // Error severity levels
 export type ErrorSeverity = 'low' | 'medium' | 'high' | 'critical';
 
@@ -15,9 +49,13 @@ export interface EnhancedError {
   message: string;
   userMessage: string;
   severity: ErrorSeverity;
+  type?: string;
   details?: Record<string, any>;
   retryable: boolean;
   actionable: boolean;
+  requestId?: string;
+  correlationId?: string;
+  timestamp?: string;
 }
 
 // Error code mappings to user-friendly messages
@@ -126,6 +164,90 @@ const ERROR_MESSAGES: Record<string, Partial<EnhancedError>> = {
     actionable: false,
   },
 
+  // Security errors
+  'SECURITY_ERROR': {
+    userMessage: 'Security violation detected. Access denied.',
+    severity: 'critical',
+    retryable: false,
+    actionable: false,
+  },
+
+  // Database errors
+  'DATABASE_ERROR': {
+    userMessage: 'Database error occurred. Please try again later.',
+    severity: 'high',
+    retryable: true,
+    actionable: false,
+  },
+
+  // Service errors
+  'SERVICE_UNAVAILABLE': {
+    userMessage: 'Service is temporarily unavailable. Please try again later.',
+    severity: 'high',
+    retryable: true,
+    actionable: false,
+  },
+
+  // Configuration errors
+  'CONFIGURATION_ERROR': {
+    userMessage: 'System configuration error. Please contact support.',
+    severity: 'critical',
+    retryable: false,
+    actionable: false,
+  },
+
+  // Business rule violations
+  'BUSINESS_RULE_VIOLATION': {
+    userMessage: 'This action violates business rules.',
+    severity: 'medium',
+    retryable: false,
+    actionable: true,
+  },
+
+  // Resource exhaustion
+  'RESOURCE_EXHAUSTION': {
+    userMessage: 'System resources are exhausted. Please try again later.',
+    severity: 'high',
+    retryable: true,
+    actionable: false,
+  },
+
+  // Queue errors
+  'QUEUE_FULL': {
+    userMessage: 'System is busy. Please try again in a few minutes.',
+    severity: 'medium',
+    retryable: true,
+    actionable: false,
+  },
+
+  // Integration errors
+  'GITHUB_INTEGRATION_ERROR': {
+    userMessage: 'GitHub integration error. Please check your connection.',
+    severity: 'medium',
+    retryable: true,
+    actionable: true,
+  },
+  'GITLAB_INTEGRATION_ERROR': {
+    userMessage: 'GitLab integration error. Please check your connection.',
+    severity: 'medium',
+    retryable: true,
+    actionable: true,
+  },
+  'SUPABASE_INTEGRATION_ERROR': {
+    userMessage: 'Authentication service error. Please try again.',
+    severity: 'high',
+    retryable: true,
+    actionable: true,
+  },
+
+  // HTTP errors
+  'HTTP_ERROR': {
+    userMessage: 'Network request failed. Please try again.',
+    severity: 'medium',
+    retryable: true,
+    actionable: true,
+  },
+
   // Unknown errors
   'UNKNOWN_ERROR': {
     userMessage: 'An unexpected error occurred. Please try again.',
@@ -137,8 +259,9 @@ const ERROR_MESSAGES: Record<string, Partial<EnhancedError>> = {
 
 /**
  * Enhances an API error with user-friendly information
+ * Supports both old ApiError format and new BackendApiError format
  */
-export function enhanceError(apiError: ApiError): EnhancedError {
+export function enhanceError(apiError: ApiError | BackendApiError): EnhancedError {
   const errorConfig = ERROR_MESSAGES[apiError.code] || ERROR_MESSAGES['UNKNOWN_ERROR'];
   
   const enhancedError: EnhancedError = {
@@ -146,20 +269,60 @@ export function enhanceError(apiError: ApiError): EnhancedError {
     message: apiError.message,
     userMessage: errorConfig.userMessage || apiError.message,
     severity: errorConfig.severity || 'medium',
+    type: (apiError as BackendApiError).type,
     details: apiError.details,
     retryable: errorConfig.retryable ?? true,
     actionable: errorConfig.actionable ?? true,
+    requestId: (apiError as BackendApiError).request_id,
+    correlationId: (apiError as BackendApiError).correlation_id,
+    timestamp: (apiError as BackendApiError).timestamp,
   };
 
-  // Log error to Observe MCP for debugging
+  // Log error to Observe MCP for debugging with enhanced context
   observeLogger.logError(new Error(`API Error: ${apiError.code}`), {
     code: apiError.code,
     message: apiError.message,
+    type: enhancedError.type,
     details: apiError.details,
     severity: enhancedError.severity,
+    requestId: enhancedError.requestId,
+    correlationId: enhancedError.correlationId,
+    timestamp: enhancedError.timestamp,
   });
 
   return enhancedError;
+}
+
+/**
+ * Extracts error from API response
+ */
+export function extractErrorFromResponse(response: ApiResponse): BackendApiError | null {
+  if (!response.success && response.error) {
+    return response.error;
+  }
+  return null;
+}
+
+/**
+ * Handles fetch response and extracts errors
+ */
+export async function handleApiResponse<T>(response: Response): Promise<T> {
+  const data: ApiResponse<T> = await response.json();
+  
+  if (!data.success && data.error) {
+    throw enhanceError(data.error);
+  }
+  
+  if (!response.ok) {
+    // Fallback for non-standard error responses
+    throw enhanceError({
+      code: 'HTTP_ERROR',
+      message: `HTTP ${response.status}: ${response.statusText}`,
+      type: 'http_error',
+    });
+  }
+  
+  return data.data as T;
 }
 
 /**
@@ -281,7 +444,7 @@ export class ErrorHandler {
   /**
    * Handles API errors and returns enhanced error information
    */
-  public handleApiError(apiError: ApiError, context?: string): EnhancedError {
+  public handleApiError(apiError: ApiError | BackendApiError, context?: string): EnhancedError {
     const enhancedError = enhanceError(apiError);
     
     // Log to console in development
@@ -290,12 +453,33 @@ export class ErrorHandler {
         code: enhancedError.code,
         message: enhancedError.message,
         userMessage: enhancedError.userMessage,
+        type: enhancedError.type,
         context,
         details: enhancedError.details,
+        requestId: enhancedError.requestId,
+        correlationId: enhancedError.correlationId,
       });
     }
 
     return enhancedError;
+  }
+
+  /**
+   * Handles API response and extracts errors
+   */
+  public async handleApiResponse<T>(response: Response, context?: string): Promise<T> {
+    try {
+      return await handleApiResponse<T>(response);
+    } catch (error) {
+      if (error instanceof Error && 'code' in error) {
+        // Already an enhanced error
+        return Promise.reject(error);
+      }
+      
+      // Convert to enhanced error
+      const enhancedError = this.handleUnexpectedError(error as Error, context);
+      return Promise.reject(enhancedError);
+    }
   }
 
   /**

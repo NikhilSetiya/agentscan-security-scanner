@@ -24,6 +24,9 @@ tests/
 /docs-site/
 /web/frontend/
 
+# Ignore nested duplicate directory
+/agentscan-security-scanner/
+
 # Ignore CI/CD
 .github/
 terraform/

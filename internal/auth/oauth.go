@@ -46,7 +46,7 @@ func NewGitHubProvider(cfg *config.Config) *GitHubProvider {
 	return &GitHubProvider{
 		clientID:     cfg.Auth.GitHubClientID,
 		clientSecret: cfg.Auth.GitHubSecret,
-		redirectURI:  "http://localhost:3000/auth/callback", // TODO: Make configurable
+		redirectURI:  cfg.Auth.OAuthRedirectURI,
 	}
 }
 
@@ -229,7 +229,7 @@ func NewGitLabProvider(cfg *config.Config) *GitLabProvider {
 	return &GitLabProvider{
 		clientID:     cfg.Auth.GitLabClientID,
 		clientSecret: cfg.Auth.GitLabSecret,
-		redirectURI:  "http://localhost:3000/auth/gitlab/callback", // TODO: Make configurable
+		redirectURI:  cfg.Auth.OAuthRedirectURI,
 	}
 }
 

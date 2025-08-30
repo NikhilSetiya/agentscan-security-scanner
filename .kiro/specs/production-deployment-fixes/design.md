@@ -2,598 +2,661 @@
 
 ## Overview
 
-This design document outlines the comprehensive solution to fix the AgentScan Security Scanner production deployment issues. The solution involves migrating from simple JWT authentication to Supabase, implementing proper secrets management, fixing API connectivity issues, replacing dummy data with real data integration, and completely overhauling the UI/UX for a modern, professional experience.
+This design document outlines the comprehensive architectural improvements and fixes needed to transform the AgentScan Security Scanner from its current state with critical issues into a production-ready, enterprise-grade security scanning platform. The design addresses code duplication, security vulnerabilities, performance bottlenecks, inconsistent error handling, deployment configuration issues, and architectural concerns identified in the senior software engineer review.
 
 ## Architecture
 
 ### Current Architecture Issues
-- Frontend deployed on Vercel with incorrect API endpoint configuration
-- Backend deployed on fly.io with hardcoded secrets in environment variables
-- Simple JWT authentication without proper user management
-- Mock data throughout the frontend with no real API integration
-- Poor UI/UX with basic styling and limited functionality
 
-### Target Architecture
-```mermaid
-graph TB
-    subgraph "Frontend (Vercel)"
-        A[React App] --> B[Supabase Client]
-        A --> C[API Client]
-        A --> D[Modern UI Components]
-    end
-    
-    subgraph "Authentication & Secrets"
-        B --> E[Supabase Auth]
-        B --> F[Supabase Secrets Vault]
-    end
-    
-    subgraph "Backend (fly.io)"
-        C --> G[API Server]
-        G --> H[Supabase Integration]
-        G --> I[Database]
-        G --> J[Redis Cache]
-        G --> K[Security Agents]
-    end
-    
-    subgraph "Data Flow"
-        L[Real Scan Data] --> G
-        G --> M[Processed Results]
-        M --> A
-    end
+The current architecture suffers from several critical problems:
+- Mixed concerns across layers (business logic in API handlers)
+- Inconsistent repository patterns and interfaces
+- No clear separation between domain and infrastructure
+- Duplicate code patterns throughout the API layer
+- Inconsistent error handling strategies
+
+### Target Clean Architecture
+
+```
+cmd/
+├── api/                    # Application entry points
+├── orchestrator/          # Orchestrator service entry
+internal/
+├── domain/               # Business Logic Layer (NEW)
+│   ├── entities/         # Core business entities
+│   ├── services/         # Business services
+│   ├── repositories/     # Repository interfaces
+│   └── errors/          # Domain-specific errors
+├── application/         # Application Layer (NEW)
+│   ├── commands/        # Command handlers (CQRS)
+│   ├── queries/         # Query handlers (CQRS)
+│   ├── dto/            # Data transfer objects
+│   └── services/       # Application services
+├── infrastructure/     # Infrastructure Layer (NEW)
+│   ├── database/       # Database implementations
+│   ├── external/       # External service clients
+│   ├── cache/         # Caching implementations
+│   └── queue/         # Queue implementations
+├── adapters/          # Interface Adapters (NEW)
+│   ├── http/          # HTTP handlers (thin layer)
+│   ├── middleware/    # Common middleware
+│   └── validators/    # Input validation
+└── shared/           # Shared utilities (NEW)
+    ├── config/       # Configuration management
+    ├── logging/      # Structured logging
+    └── monitoring/   # Observability
+```
+
+### Dependency Flow
+
+```
+HTTP Handlers → Application Services → Domain Services → Repository Interfaces
+                     ↓                      ↓                    ↓
+                Application DTOs    Domain Entities    Infrastructure Implementations
 ```
 
 ## Components and Interfaces
 
-### 1. Supabase Authentication Integration
+### 1. Standardized Repository Pattern
 
-#### Frontend Authentication Service
-```typescript
-interface SupabaseAuthService {
-  signIn(email: string, password: string): Promise<AuthResponse>
-  signUp(email: string, password: string, metadata?: UserMetadata): Promise<AuthResponse>
-  signOut(): Promise<void>
-  resetPassword(email: string): Promise<void>
-  getSession(): Promise<Session | null>
-  onAuthStateChange(callback: (event: AuthChangeEvent, session: Session | null) => void): void
-}
-
-interface AuthResponse {
-  user: User | null
-  session: Session | null
-  error: AuthError | null
-}
-```
-
-#### Backend Supabase Integration
 ```go
-type SupabaseClient struct {
-    URL       string
-    AnonKey   string
-    ServiceKey string
-    client    *supabase.Client
+// internal/domain/repositories/base.go
+type BaseRepository[T any, ID comparable] interface {
+    Create(ctx context.Context, entity T) error
+    GetByID(ctx context.Context, id ID) (T, error)
+    Update(ctx context.Context, entity T) error
+    Delete(ctx context.Context, id ID) error
+    List(ctx context.Context, filter Filter, pagination Pagination) ([]T, int64, error)
+    Exists(ctx context.Context, id ID) (bool, error)
 }
 
-type AuthMiddleware struct {
-    supabase *SupabaseClient
+// internal/domain/repositories/user.go
+type UserRepository interface {
+    BaseRepository[*entities.User, uuid.UUID]
+    GetByEmail(ctx context.Context, email string) (*entities.User, error)
+    GetBySupabaseID(ctx context.Context, supabaseID string) (*entities.User, error)
 }
 
-func (m *AuthMiddleware) ValidateToken(token string) (*User, error)
-func (m *AuthMiddleware) GetUserFromToken(token string) (*User, error)
-```
-
-### 2. Secrets Management System
-
-#### Supabase Secrets Vault Integration
-```typescript
-interface SecretsManager {
-  getSecret(key: string): Promise<string>
-  setSecret(key: string, value: string): Promise<void>
-  listSecrets(): Promise<string[]>
-  deleteSecret(key: string): Promise<void>
-}
-
-// Secrets to migrate:
-const SECRETS_TO_MIGRATE = [
-  'JWT_SECRET',
-  'GITHUB_CLIENT_ID',
-  'GITHUB_SECRET',
-  'GITLAB_CLIENT_ID', 
-  'GITLAB_SECRET',
-  'DATABASE_PASSWORD',
-  'REDIS_PASSWORD'
-]
-```
-
-### 3. API Connectivity Fixes
-
-#### Environment Configuration
-```typescript
-// Frontend environment configuration
-interface EnvironmentConfig {
-  VITE_API_BASE_URL: string // https://agentscan-security-scanner.fly.dev/api/v1
-  VITE_SUPABASE_URL: string
-  VITE_SUPABASE_ANON_KEY: string
-  VITE_WS_BASE_URL: string // wss://agentscan-security-scanner.fly.dev/ws
-}
-
-// Backend CORS configuration
-interface CORSConfig {
-  allowedOrigins: string[] // Include Vercel domain
-  allowedMethods: string[]
-  allowedHeaders: string[]
-  credentials: boolean
+// internal/domain/repositories/scan_job.go
+type ScanJobRepository interface {
+    BaseRepository[*entities.ScanJob, uuid.UUID]
+    ListByRepository(ctx context.Context, repoID uuid.UUID, filter Filter, pagination Pagination) ([]*entities.ScanJob, int64, error)
+    GetWithDetails(ctx context.Context, id uuid.UUID) (*entities.ScanJobWithDetails, error)
+    UpdateStatus(ctx context.Context, id uuid.UUID, status string) error
 }
 ```
 
-### 4. Real Data Integration
+### 2. Unified Error Handling System
 
-#### API Response Standardization
 ```go
+// pkg/errors/domain.go
+type DomainError struct {
+    Type       ErrorType              `json:"type"`
+    Code       string                 `json:"code"`
+    Message    string                 `json:"message"`
+    Details    map[string]interface{} `json:"details,omitempty"`
+    Cause      error                  `json:"-"`
+    Timestamp  time.Time              `json:"timestamp"`
+    RequestID  string                 `json:"request_id,omitempty"`
+    UserID     *uuid.UUID             `json:"user_id,omitempty"`
+}
+
+// internal/adapters/http/middleware/error.go
+func ErrorHandlerMiddleware() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        c.Next()
+        if len(c.Errors) > 0 {
+            err := c.Errors.Last().Err
+            handleError(c, err)
+        }
+    }
+}
+
+// internal/adapters/http/responses/standardized.go
 type APIResponse struct {
-    Success bool        `json:"success"`
-    Data    interface{} `json:"data,omitempty"`
-    Error   *APIError   `json:"error,omitempty"`
-    Meta    *Meta       `json:"meta,omitempty"`
-}
-
-type APIError struct {
-    Code    string `json:"code"`
-    Message string `json:"message"`
-    Details map[string]interface{} `json:"details,omitempty"`
-}
-
-type Meta struct {
-    Pagination *Pagination `json:"pagination,omitempty"`
-    Timestamp  time.Time   `json:"timestamp"`
+    Success   bool                   `json:"success"`
+    Data      interface{}            `json:"data,omitempty"`
+    Error     *APIError             `json:"error,omitempty"`
+    Meta      *ResponseMeta         `json:"meta,omitempty"`
+    RequestID string                `json:"request_id"`
+    Timestamp time.Time             `json:"timestamp"`
 }
 ```
 
-#### Database Schema Updates
-```sql
--- Users table for Supabase integration
-CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    supabase_id UUID UNIQUE NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    name VARCHAR(255),
-    avatar_url TEXT,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
-);
+### 3. Common Middleware and Utilities
 
--- Repositories table
-CREATE TABLE repositories (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id),
-    name VARCHAR(255) NOT NULL,
-    url TEXT NOT NULL,
-    language VARCHAR(100),
-    branch VARCHAR(255) DEFAULT 'main',
-    created_at TIMESTAMP DEFAULT NOW(),
-    last_scan_at TIMESTAMP
-);
-
--- Scans table
-CREATE TABLE scans (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    repository_id UUID REFERENCES repositories(id),
-    user_id UUID REFERENCES users(id),
-    status VARCHAR(50) NOT NULL,
-    progress INTEGER DEFAULT 0,
-    findings_count INTEGER DEFAULT 0,
-    started_at TIMESTAMP DEFAULT NOW(),
-    completed_at TIMESTAMP,
-    branch VARCHAR(255),
-    commit_hash VARCHAR(255),
-    scan_type VARCHAR(50) DEFAULT 'full'
-);
-```
-
-### 5. Modern UI Component System
-
-#### Design System
-```typescript
-// Color palette
-const colors = {
-  primary: {
-    50: '#eff6ff',
-    500: '#3b82f6',
-    600: '#2563eb',
-    900: '#1e3a8a'
-  },
-  success: {
-    50: '#f0fdf4',
-    500: '#22c55e',
-    600: '#16a34a'
-  },
-  warning: {
-    50: '#fffbeb',
-    500: '#f59e0b',
-    600: '#d97706'
-  },
-  error: {
-    50: '#fef2f2',
-    500: '#ef4444',
-    600: '#dc2626'
-  }
+```go
+// internal/adapters/http/middleware/auth.go
+func RequireAuth() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        userID, exists := extractUserID(c)
+        if !exists {
+            c.Error(errors.NewAuthenticationError("authentication required"))
+            c.Abort()
+            return
+        }
+        c.Set("authenticated_user_id", userID)
+        c.Next()
+    }
 }
 
-// Typography scale
-const typography = {
-  h1: { fontSize: '2.25rem', fontWeight: '700', lineHeight: '2.5rem' },
-  h2: { fontSize: '1.875rem', fontWeight: '600', lineHeight: '2.25rem' },
-  body: { fontSize: '1rem', fontWeight: '400', lineHeight: '1.5rem' },
-  caption: { fontSize: '0.875rem', fontWeight: '400', lineHeight: '1.25rem' }
+// internal/adapters/http/middleware/pagination.go
+func PaginationMiddleware() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        pagination := parsePagination(c)
+        c.Set("pagination", pagination)
+        c.Next()
+    }
+}
+
+// internal/adapters/http/middleware/validation.go
+func ValidateUUID(param string) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        id, err := parseUUIDParam(c, param)
+        if err != nil {
+            c.Error(errors.NewValidationError("invalid UUID format"))
+            c.Abort()
+            return
+        }
+        c.Set(param+"_uuid", id)
+        c.Next()
+    }
 }
 ```
 
-#### Component Architecture
-```typescript
-// Base component interfaces
-interface BaseComponentProps {
-  className?: string
-  children?: React.ReactNode
-  testId?: string
+### 4. Database Optimization Layer
+
+```go
+// internal/infrastructure/database/optimized_queries.go
+type OptimizedQueries struct {
+    db *sqlx.DB
 }
 
-interface ButtonProps extends BaseComponentProps {
-  variant: 'primary' | 'secondary' | 'ghost' | 'danger'
-  size: 'sm' | 'md' | 'lg'
-  loading?: boolean
-  disabled?: boolean
-  icon?: React.ReactNode
-  onClick?: () => void
+// Solve N+1 query problem with JOIN queries
+func (q *OptimizedQueries) GetScansWithDetails(ctx context.Context, filter ScanFilter, pagination Pagination) ([]*ScanWithDetails, int64, error) {
+    query := `
+        SELECT 
+            sj.*,
+            r.name as repository_name,
+            r.url as repository_url,
+            r.language as repository_language,
+            u.email as triggered_by_email,
+            COUNT(f.id) as findings_count,
+            EXTRACT(EPOCH FROM (COALESCE(sj.completed_at, NOW()) - sj.started_at)) as duration_seconds
+        FROM scan_jobs sj
+        JOIN repositories r ON sj.repository_id = r.id
+        LEFT JOIN users u ON sj.user_id = u.id
+        LEFT JOIN findings f ON sj.id = f.scan_job_id
+        WHERE ($1::uuid IS NULL OR sj.repository_id = $1)
+          AND ($2::text IS NULL OR sj.status = $2)
+          AND ($3::uuid IS NULL OR sj.user_id = $3)
+        GROUP BY sj.id, r.id, u.id
+        ORDER BY sj.created_at DESC
+        LIMIT $4 OFFSET $5
+    `
+    // Single query instead of N+1 queries
 }
 
-interface CardProps extends BaseComponentProps {
-  padding?: 'sm' | 'md' | 'lg'
-  shadow?: 'sm' | 'md' | 'lg'
-  border?: boolean
+// Database indexes for performance
+func (q *OptimizedQueries) CreateIndexes(ctx context.Context) error {
+    indexes := []string{
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_scan_jobs_repository_status ON scan_jobs(repository_id, status)",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_findings_scan_job_severity ON findings(scan_job_id, severity)",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_repositories_org_active ON repositories(organization_id, is_active)",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_scan_jobs_user_created ON scan_jobs(user_id, created_at DESC)",
+    }
+    // Execute index creation
 }
 ```
 
-### 6. Scan Management System
+### 5. Security Enhancement Layer
 
-#### Scan Creation Flow
-```typescript
-interface ScanCreationFlow {
-  // Step 1: Repository Selection
-  selectRepository(repositoryId: string): void
-  
-  // Step 2: Scan Configuration
-  configureScan(config: ScanConfig): void
-  
-  // Step 3: Agent Selection
-  selectAgents(agents: string[]): void
-  
-  // Step 4: Submit and Monitor
-  submitScan(): Promise<ScanResponse>
-  monitorProgress(scanId: string): Observable<ScanProgress>
+```go
+// internal/adapters/http/middleware/security.go
+func SecurityMiddleware() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        // Security headers
+        c.Header("X-Content-Type-Options", "nosniff")
+        c.Header("X-Frame-Options", "DENY")
+        c.Header("X-XSS-Protection", "1; mode=block")
+        c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+        c.Header("Content-Security-Policy", "default-src 'self'")
+        c.Next()
+    }
 }
 
-interface ScanConfig {
-  scanType: 'full' | 'incremental'
-  branch?: string
-  commit?: string
-  agents: string[]
-  priority: 'low' | 'normal' | 'high'
+func RateLimitMiddleware(requests int, window time.Duration) gin.HandlerFunc {
+    // Implement rate limiting using Redis
+}
+
+// internal/adapters/http/validators/input.go
+type InputValidator struct {
+    validator *validator.Validate
+}
+
+func (v *InputValidator) ValidateAndSanitize(input interface{}) error {
+    // Comprehensive input validation and sanitization
+    if err := v.validator.Struct(input); err != nil {
+        return errors.NewValidationError("input validation failed").WithDetails(extractValidationErrors(err))
+    }
+    return nil
 }
 ```
 
 ## Data Models
 
-### User Management
-```typescript
-interface User {
-  id: string
-  supabaseId: string
-  email: string
-  name: string
-  avatarUrl?: string
-  createdAt: string
-  updatedAt: string
-  subscription?: {
-    plan: 'free' | 'pro' | 'team' | 'enterprise'
-    status: 'active' | 'cancelled' | 'past_due'
-  }
+### Enhanced Entity Definitions
+
+```go
+// internal/domain/entities/user.go
+type User struct {
+    ID         uuid.UUID  `json:"id"`
+    Email      string     `json:"email" validate:"required,email"`
+    Name       string     `json:"name" validate:"required,min=1,max=255"`
+    AvatarURL  string     `json:"avatar_url" validate:"omitempty,url"`
+    SupabaseID *string    `json:"supabase_id,omitempty"`
+    Role       UserRole   `json:"role" validate:"required"`
+    CreatedAt  time.Time  `json:"created_at"`
+    UpdatedAt  time.Time  `json:"updated_at"`
+}
+
+// internal/domain/entities/scan_job.go
+type ScanJobWithDetails struct {
+    ScanJob
+    Repository    *Repository `json:"repository"`
+    User          *User       `json:"user,omitempty"`
+    FindingsCount int         `json:"findings_count"`
+    Duration      *time.Duration `json:"duration,omitempty"`
+}
+
+// internal/domain/value_objects/pagination.go
+type Pagination struct {
+    Page       int   `json:"page" validate:"min=1"`
+    PageSize   int   `json:"page_size" validate:"min=1,max=100"`
+    Total      int64 `json:"total"`
+    TotalPages int   `json:"total_pages"`
+    HasNext    bool  `json:"has_next"`
+    HasPrev    bool  `json:"has_prev"`
 }
 ```
 
-### Repository Management
-```typescript
-interface Repository {
-  id: string
-  userId: string
-  name: string
-  url: string
-  language: string
-  branch: string
-  createdAt: string
-  lastScanAt?: string
-  scanCount: number
-  status: 'active' | 'archived'
-}
-```
+### Database Schema Optimizations
 
-### Scan Management
-```typescript
-interface Scan {
-  id: string
-  repositoryId: string
-  userId: string
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
-  progress: number
-  findingsCount: number
-  startedAt: string
-  completedAt?: string
-  duration?: string
-  branch: string
-  commitHash: string
-  scanType: 'full' | 'incremental'
-  agents: string[]
-  findings?: Finding[]
-}
+```sql
+-- migrations/011_add_performance_indexes.up.sql
+-- Critical indexes for performance
+CREATE INDEX CONCURRENTLY idx_scan_jobs_repository_status ON scan_jobs(repository_id, status);
+CREATE INDEX CONCURRENTLY idx_scan_jobs_user_created ON scan_jobs(user_id, created_at DESC);
+CREATE INDEX CONCURRENTLY idx_findings_scan_job_severity ON findings(scan_job_id, severity);
+CREATE INDEX CONCURRENTLY idx_repositories_org_active ON repositories(organization_id, is_active);
 
-interface Finding {
-  id: string
-  scanId: string
-  ruleId: string
-  title: string
-  description: string
-  severity: 'critical' | 'high' | 'medium' | 'low' | 'info'
-  filePath: string
-  lineNumber: number
-  tool: string
-  confidence: number
-  status: 'open' | 'ignored' | 'fixed' | 'false_positive'
-  codeSnippet?: string
-  fixSuggestion?: string
-}
+-- Optimized view for dashboard statistics
+CREATE VIEW dashboard_stats AS
+SELECT 
+    COUNT(DISTINCT sj.id) as total_scans,
+    COUNT(DISTINCT r.id) as total_repositories,
+    COUNT(CASE WHEN f.severity = 'critical' THEN 1 END) as critical_findings,
+    COUNT(CASE WHEN f.severity = 'high' THEN 1 END) as high_findings,
+    COUNT(CASE WHEN f.severity = 'medium' THEN 1 END) as medium_findings,
+    COUNT(CASE WHEN f.severity = 'low' THEN 1 END) as low_findings,
+    r.organization_id
+FROM repositories r
+LEFT JOIN scan_jobs sj ON r.id = sj.repository_id
+LEFT JOIN findings f ON sj.id = f.scan_job_id
+WHERE r.is_active = true
+GROUP BY r.organization_id;
 ```
 
 ## Error Handling
 
-### Frontend Error Boundaries
-```typescript
-interface ErrorBoundaryState {
-  hasError: boolean
-  error?: Error
-  errorInfo?: ErrorInfo
+### Comprehensive Error Strategy
+
+```go
+// pkg/errors/types.go
+type ErrorType string
+
+const (
+    ErrorTypeValidation     ErrorType = "validation"
+    ErrorTypeAuthentication ErrorType = "authentication"
+    ErrorTypeAuthorization  ErrorType = "authorization"
+    ErrorTypeNotFound       ErrorType = "not_found"
+    ErrorTypeConflict       ErrorType = "conflict"
+    ErrorTypeRateLimit      ErrorType = "rate_limit"
+    ErrorTypeInternal       ErrorType = "internal"
+    ErrorTypeExternal       ErrorType = "external"
+    ErrorTypeTimeout        ErrorType = "timeout"
+    ErrorTypeSecurity       ErrorType = "security"
+)
+
+// internal/adapters/http/handlers/base.go
+type BaseHandler struct {
+    logger    *zap.Logger
+    validator *InputValidator
 }
 
-class GlobalErrorBoundary extends Component<Props, ErrorBoundaryState> {
-  // Handle React errors
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState
-  componentDidCatch(error: Error, errorInfo: ErrorInfo): void
-  
-  // Handle API errors
-  handleApiError(error: ApiError): void
-  
-  // Handle network errors
-  handleNetworkError(error: NetworkError): void
+func (h *BaseHandler) HandleError(c *gin.Context, err error) {
+    requestID := c.GetString("request_id")
+    
+    // Log error with context
+    h.logger.Error("request error",
+        zap.String("request_id", requestID),
+        zap.String("method", c.Request.Method),
+        zap.String("path", c.Request.URL.Path),
+        zap.Error(err),
+    )
+    
+    // Convert to standardized error response
+    c.Error(err)
 }
 ```
 
-### Backend Error Handling
-```go
-type ErrorHandler struct {
-    logger *slog.Logger
-    sentry *sentry.Client
+### Frontend Error Handling Integration
+
+```typescript
+// web/frontend/src/utils/errorHandler.ts
+interface StandardizedError {
+    type: string;
+    code: string;
+    message: string;
+    details?: Record<string, any>;
+    request_id?: string;
+    timestamp: string;
 }
 
-func (h *ErrorHandler) HandleError(c *gin.Context, err error) {
-    // Log error
-    h.logger.Error("API Error", "error", err, "path", c.Request.URL.Path)
-    
-    // Send to monitoring
-    h.sentry.CaptureException(err)
-    
-    // Return appropriate response
-    switch e := err.(type) {
-    case *ValidationError:
-        c.JSON(400, APIResponse{Error: &APIError{Code: "VALIDATION_ERROR", Message: e.Message}})
-    case *AuthError:
-        c.JSON(401, APIResponse{Error: &APIError{Code: "AUTH_ERROR", Message: e.Message}})
-    case *NotFoundError:
-        c.JSON(404, APIResponse{Error: &APIError{Code: "NOT_FOUND", Message: e.Message}})
-    default:
-        c.JSON(500, APIResponse{Error: &APIError{Code: "INTERNAL_ERROR", Message: "Internal server error"}})
+class ErrorHandler {
+    handleApiError(error: StandardizedError, context?: string): EnhancedError {
+        // Map backend error types to frontend error handling
+        const severity = this.mapErrorTypeToSeverity(error.type);
+        const userMessage = this.generateUserFriendlyMessage(error);
+        
+        return {
+            code: error.code,
+            message: error.message,
+            userMessage,
+            severity,
+            details: error.details,
+            retryable: this.isRetryable(error.type),
+            actionable: this.isActionable(error.type),
+        };
     }
 }
 ```
 
 ## Testing Strategy
 
-### Frontend Testing
-```typescript
-// Component testing with React Testing Library
-describe('LoginForm', () => {
-  it('should authenticate with Supabase', async () => {
-    render(<LoginForm />)
-    
-    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'test@example.com' } })
-    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Sign In' }))
-    
-    await waitFor(() => {
-      expect(mockSupabaseAuth.signIn).toHaveBeenCalledWith('test@example.com', 'password123')
-    })
-  })
-})
+### Comprehensive Testing Approach
 
-// API integration testing
-describe('API Client', () => {
-  it('should handle authentication errors', async () => {
-    mockSupabaseAuth.getSession.mockResolvedValue(null)
-    
-    const response = await apiClient.getDashboardStats()
-    
-    expect(response.error).toEqual({
-      code: 'AUTH_ERROR',
-      message: 'Authentication required'
-    })
-  })
-})
-```
-
-### Backend Testing
 ```go
-func TestSupabaseAuth(t *testing.T) {
-    // Test Supabase token validation
-    middleware := NewAuthMiddleware(supabaseClient)
-    
-    // Valid token test
-    user, err := middleware.ValidateToken(validToken)
-    assert.NoError(t, err)
-    assert.NotNil(t, user)
-    
-    // Invalid token test
-    user, err = middleware.ValidateToken(invalidToken)
-    assert.Error(t, err)
-    assert.Nil(t, user)
+// tests/integration/api_test.go
+func TestAPIEndpoints(t *testing.T) {
+    // Test all API endpoints with standardized patterns
+    testCases := []struct {
+        name           string
+        method         string
+        path           string
+        body           interface{}
+        expectedStatus int
+        expectedError  string
+    }{
+        {
+            name:           "create repository with valid data",
+            method:         "POST",
+            path:           "/api/v1/repositories",
+            body:           validRepositoryRequest,
+            expectedStatus: 201,
+        },
+        {
+            name:           "create repository with invalid data",
+            method:         "POST",
+            path:           "/api/v1/repositories",
+            body:           invalidRepositoryRequest,
+            expectedStatus: 400,
+            expectedError:  "VALIDATION_ERROR",
+        },
+    }
 }
 
-func TestSecretsManager(t *testing.T) {
-    secretsManager := NewSecretsManager(supabaseClient)
+// tests/unit/repositories_test.go
+func TestRepositoryPattern(t *testing.T) {
+    // Test repository implementations
+    repo := setupTestRepository(t)
     
-    // Test secret retrieval
-    secret, err := secretsManager.GetSecret("JWT_SECRET")
-    assert.NoError(t, err)
-    assert.NotEmpty(t, secret)
+    t.Run("CRUD operations", func(t *testing.T) {
+        // Test Create, Read, Update, Delete operations
+    })
+    
+    t.Run("error handling", func(t *testing.T) {
+        // Test error scenarios
+    })
 }
 ```
 
-### End-to-End Testing
-```typescript
-// Playwright E2E tests
-test('complete scan workflow', async ({ page }) => {
-  // Login
-  await page.goto('/login')
-  await page.fill('[data-testid="email-input"]', 'test@example.com')
-  await page.fill('[data-testid="password-input"]', 'password123')
-  await page.click('[data-testid="login-button"]')
-  
-  // Navigate to scans
-  await page.click('[data-testid="scans-nav"]')
-  
-  // Create new scan
-  await page.click('[data-testid="new-scan-button"]')
-  await page.selectOption('[data-testid="repository-select"]', 'repo-1')
-  await page.click('[data-testid="submit-scan-button"]')
-  
-  // Verify scan creation
-  await expect(page.locator('[data-testid="scan-status"]')).toContainText('queued')
-})
+### Performance Testing
+
+```go
+// tests/performance/load_test.go
+func TestDatabasePerformance(t *testing.T) {
+    // Test N+1 query resolution
+    // Test pagination performance
+    // Test index effectiveness
+}
+```
+
+## Deployment Strategy
+
+### Consolidated Deployment Configuration
+
+```yaml
+# deployment/production/docker-compose.yml
+version: '3.8'
+services:
+  api:
+    build:
+      context: .
+      dockerfile: deployment/production/Dockerfile
+    environment:
+      - ENV=production
+      - DB_HOST=postgres
+      - REDIS_HOST=redis
+    depends_on:
+      - postgres
+      - redis
+    
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: agentscan
+      POSTGRES_USER: agentscan
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+```
+
+```dockerfile
+# deployment/production/Dockerfile
+FROM golang:1.23-alpine AS builder
+
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o agentscan ./cmd/api
+
+FROM alpine:3.19
+RUN apk --no-cache add ca-certificates tzdata
+WORKDIR /root/
+COPY --from=builder /app/agentscan .
+EXPOSE 8080
+CMD ["./agentscan"]
+```
+
+### Environment-Specific Configurations
+
+```bash
+# deployment/scripts/deploy-production.sh
+#!/bin/bash
+set -euo pipefail
+
+# Single deployment script for production
+echo "Deploying AgentScan to production..."
+
+# Validate environment
+./scripts/validate-env.sh production
+
+# Build and deploy
+docker-compose -f deployment/production/docker-compose.yml up -d
+
+# Run health checks
+./scripts/health-check.sh
+
+echo "Deployment completed successfully!"
 ```
 
 ## Security Considerations
 
-### Authentication Security
-- Use Supabase Row Level Security (RLS) for data access control
-- Implement proper session management with automatic token refresh
-- Use secure HTTP-only cookies for session storage where possible
-- Implement rate limiting on authentication endpoints
+### Input Validation and Sanitization
 
-### API Security
-- Validate all Supabase tokens on backend requests
-- Implement proper CORS configuration for production domains
-- Use HTTPS everywhere with proper certificate management
-- Implement request signing for sensitive operations
-
-### Secrets Management
-- Migrate all secrets from environment variables to Supabase Vault
-- Implement secret rotation policies
-- Use least-privilege access for secret retrieval
-- Audit all secret access and modifications
-
-### Data Protection
-- Encrypt sensitive data at rest using Supabase encryption
-- Implement proper data retention policies
-- Use parameterized queries to prevent SQL injection
-- Sanitize all user inputs and outputs
-
-## Performance Optimizations
-
-### Frontend Performance
-- Implement code splitting for route-based chunks
-- Use React.memo and useMemo for expensive computations
-- Implement virtual scrolling for large data sets
-- Optimize bundle size with tree shaking and compression
-
-### Backend Performance
-- Implement Redis caching for frequently accessed data
-- Use database connection pooling
-- Implement proper indexing for database queries
-- Use background jobs for long-running scan operations
-
-### Network Performance
-- Implement proper HTTP caching headers
-- Use compression for API responses
-- Implement request deduplication
-- Use WebSocket connections for real-time updates
-
-## Monitoring and Observability
-
-### Observe MCP Integration for Debugging
-```typescript
-// MCP Observe integration for real-time debugging
-interface ObserveMCPConfig {
-  endpoint: string
-  apiKey: string
-  projectId: string
-  environment: 'development' | 'staging' | 'production'
+```go
+// internal/adapters/http/validators/security.go
+type SecurityValidator struct {
+    sanitizer *bluemonday.Policy
 }
 
-interface ObserveLogger {
-  logApiCall(request: ApiRequest, response: ApiResponse, duration: number): void
-  logError(error: Error, context: Record<string, any>): void
-  logUserAction(action: string, userId: string, metadata: Record<string, any>): void
-  logScanProgress(scanId: string, progress: number, stage: string): void
-  createTrace(operationName: string): ObserveTrace
+func (v *SecurityValidator) SanitizeInput(input string) string {
+    return v.sanitizer.Sanitize(input)
 }
 
-// Backend Observe integration
-type ObserveMiddleware struct {
-    client *observe.Client
-    config *ObserveMCPConfig
-}
-
-func (m *ObserveMiddleware) LogRequest(c *gin.Context) {
-    // Log all API requests with timing and response codes
-    start := time.Now()
-    c.Next()
-    duration := time.Since(start)
-    
-    m.client.LogEvent("api_request", map[string]interface{}{
-        "method": c.Request.Method,
-        "path": c.Request.URL.Path,
-        "status": c.Writer.Status(),
-        "duration_ms": duration.Milliseconds(),
-        "user_id": getUserID(c),
-    })
+func (v *SecurityValidator) ValidateSQL(query string) error {
+    // Validate SQL queries for injection attempts
+    if containsSQLInjection(query) {
+        return errors.NewSecurityError("potential SQL injection detected")
+    }
+    return nil
 }
 ```
 
-### Application Monitoring
-- Implement Observe MCP for comprehensive request/response logging
-- Use Observe MCP for real-time error tracking and debugging
-- Implement Supabase Analytics for user behavior tracking
-- Use Sentry as backup for critical error tracking
-- Implement custom metrics for scan success rates through Observe MCP
-- Set up alerts for critical system failures via Observe MCP webhooks
+### Authentication and Authorization
 
-### Infrastructure Monitoring
-- Monitor fly.io application health and performance via Observe MCP
-- Track Vercel deployment success and performance
-- Monitor Supabase database performance and usage
-- Implement uptime monitoring for all services
-- Use Observe MCP dashboards for real-time system health visualization
+```go
+// internal/domain/services/auth.go
+type AuthService struct {
+    supabaseClient *supabase.Client
+    jwtValidator   *JWTValidator
+}
 
-### Debug Workflow Integration
-- Integrate Observe MCP traces with development workflow
-- Implement debug mode that sends detailed logs to Observe MCP
-- Create custom dashboards for scan pipeline debugging
-- Set up automated alerts for performance degradation
-- Implement distributed tracing across frontend and backend
+func (s *AuthService) ValidateToken(ctx context.Context, token string) (*User, error) {
+    // Validate Supabase JWT token
+    claims, err := s.jwtValidator.ValidateToken(token)
+    if err != nil {
+        return nil, errors.NewAuthenticationError("invalid token")
+    }
+    
+    // Get user from database
+    user, err := s.userRepo.GetBySupabaseID(ctx, claims.Subject)
+    if err != nil {
+        return nil, errors.NewAuthenticationError("user not found")
+    }
+    
+    return user, nil
+}
+```
 
-This design provides a comprehensive solution to transform the AgentScan application from its current broken state into a production-ready, secure, and user-friendly security scanning platform.
+## Performance Optimizations
+
+### Caching Strategy
+
+```go
+// internal/infrastructure/cache/redis.go
+type CacheService struct {
+    client *redis.Client
+}
+
+func (c *CacheService) GetOrSet(ctx context.Context, key string, ttl time.Duration, fn func() (interface{}, error)) (interface{}, error) {
+    // Try to get from cache first
+    cached, err := c.client.Get(ctx, key).Result()
+    if err == nil {
+        return cached, nil
+    }
+    
+    // If not in cache, execute function and cache result
+    result, err := fn()
+    if err != nil {
+        return nil, err
+    }
+    
+    // Cache the result
+    c.client.Set(ctx, key, result, ttl)
+    return result, nil
+}
+```
+
+### Database Connection Pooling
+
+```go
+// internal/infrastructure/database/connection.go
+func NewOptimizedDB(config DatabaseConfig) (*sqlx.DB, error) {
+    db, err := sqlx.Connect("postgres", config.URL)
+    if err != nil {
+        return nil, err
+    }
+    
+    // Optimize connection pool
+    db.SetMaxOpenConns(config.MaxOpenConns)
+    db.SetMaxIdleConns(config.MaxIdleConns)
+    db.SetConnMaxLifetime(config.ConnMaxLifetime)
+    db.SetConnMaxIdleTime(config.ConnMaxIdleTime)
+    
+    return db, nil
+}
+```
+
+## Monitoring and Observability
+
+### Structured Logging
+
+```go
+// internal/shared/logging/logger.go
+type Logger struct {
+    *zap.Logger
+}
+
+func (l *Logger) LogAPICall(ctx context.Context, method, path string, duration time.Duration, statusCode int) {
+    l.Info("api_call",
+        zap.String("request_id", getRequestID(ctx)),
+        zap.String("method", method),
+        zap.String("path", path),
+        zap.Duration("duration", duration),
+        zap.Int("status_code", statusCode),
+        zap.String("user_id", getUserID(ctx)),
+    )
+}
+```
+
+### Metrics Collection
+
+```go
+// internal/shared/monitoring/metrics.go
+type Metrics struct {
+    requestDuration *prometheus.HistogramVec
+    requestCount    *prometheus.CounterVec
+    errorCount      *prometheus.CounterVec
+}
+
+func (m *Metrics) RecordRequest(method, path string, duration time.Duration, statusCode int) {
+    m.requestDuration.WithLabelValues(method, path).Observe(duration.Seconds())
+    m.requestCount.WithLabelValues(method, path, strconv.Itoa(statusCode)).Inc()
+    
+    if statusCode >= 400 {
+        m.errorCount.WithLabelValues(method, path, strconv.Itoa(statusCode)).Inc()
+    }
+}
+```
+
+This comprehensive design addresses all the critical issues identified in the codebase review and provides a clear path to transform AgentScan into a production-ready, enterprise-grade security scanning platform.

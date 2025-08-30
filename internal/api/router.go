@@ -2,6 +2,7 @@ package api
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 
 	"github.com/NikhilSetiya/agentscan-security-scanner/internal/database"
 	"github.com/NikhilSetiya/agentscan-security-scanner/internal/findings"
@@ -9,6 +10,7 @@ import (
 	"github.com/NikhilSetiya/agentscan-security-scanner/internal/gitlab"
 	"github.com/NikhilSetiya/agentscan-security-scanner/internal/orchestrator"
 	"github.com/NikhilSetiya/agentscan-security-scanner/internal/queue"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/adapters/http/middleware"
 	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/config"
 )
 
@@ -25,17 +27,32 @@ func NewRouter(cfg *config.Config, db *database.DB, redis *queue.RedisClient, re
 
 	// Create services
 	auditLogger := NewAuditLogger(repos)
-	_ = NewRBACService(repos) // TODO: Use RBAC service in protected routes
+	rbacService := NewRBACService(repos)
 	agentResultHandler := NewAgentResultHandler(repos, orch)
 
-	// Add middleware
-	router.Use(RequestIDMiddleware())
-	router.Use(LoggingMiddleware())
-	router.Use(ErrorHandlingMiddleware())
-	router.Use(CORSMiddleware())
-	router.Use(SecurityHeadersMiddleware())
+	// Create security middleware
+	var redisClient *redis.Client
+	if redis != nil {
+		redisClient = redis.Client // Assuming RedisClient has a Client field
+	}
+	securityMiddleware := middleware.NewSecurityMiddleware(redisClient)
+	validationMiddleware := middleware.NewValidationMiddleware()
+	authMiddleware := middleware.NewAuthMiddleware(
+		cfg.Auth.JWTSecret,
+		cfg.Supabase.URL,
+		cfg.Supabase.AnonKey,
+	)
+
+	// Add core middleware (order matters)
+	router.Use(middleware.RequestIDMiddleware())
+	router.Use(middleware.CorrelationIDMiddleware())
+	router.Use(middleware.RequestLoggingMiddleware())
+	router.Use(middleware.SecurityEventMiddleware())
+	router.Use(securityMiddleware.SecurityHeaders())
+	router.Use(securityMiddleware.CORS())
+	router.Use(securityMiddleware.InputSanitization())
+	router.Use(middleware.ErrorHandlingMiddleware())
 	router.Use(auditLogger.AuditMiddleware())
-	router.Use(RateLimitMiddleware(redis))
 
 	// Health check endpoint (no auth required)
 	healthHandler := NewHealthHandler(db, redis)
@@ -103,6 +120,7 @@ func NewRouter(cfg *config.Config, db *database.DB, redis *queue.RedisClient, re
 	{
 		// Authentication routes (no auth required)
 		auth := v1.Group("/auth")
+		auth.Use(securityMiddleware.RateLimit("auth"))
 		{
 			auth.POST("/login", authHandler.Login) // Simple login for testing
 			auth.GET("/github/url", authHandler.GetAuthURL)
@@ -114,14 +132,15 @@ func NewRouter(cfg *config.Config, db *database.DB, redis *queue.RedisClient, re
 
 		// Protected routes (require authentication)
 		protected := v1.Group("")
-		protected.Use(AuthMiddleware(cfg))
+		protected.Use(authMiddleware.RequireAuth())
+		protected.Use(securityMiddleware.RateLimit("api"))
 		{
 			// Dashboard routes
 			dashboard := protected.Group("/dashboard")
 			{
 				dashboard.GET("/stats", dashboardHandler.GetStats)
 				dashboard.GET("/trends", dashboardHandler.GetScanTrends)
-				dashboard.GET("/health", dashboardHandler.GetSystemHealth)
+				dashboard.GET("/health", authMiddleware.RequireRole("admin"), dashboardHandler.GetSystemHealth)
 				dashboard.GET("/repositories/:id/stats", dashboardHandler.GetRepositoryStats)
 			}
 
@@ -139,33 +158,34 @@ func NewRouter(cfg *config.Config, db *database.DB, redis *queue.RedisClient, re
 			{
 				repositories.GET("", repositoryHandler.ListRepositories)
 				repositories.POST("", repositoryHandler.CreateRepository)
-				repositories.GET("/:id", repositoryHandler.GetRepository)
-				repositories.PUT("/:id", repositoryHandler.UpdateRepository)
-				repositories.DELETE("/:id", repositoryHandler.DeleteRepository)
-				repositories.GET("/:id/scans", repositoryHandler.GetRepositoryScans)
+				repositories.GET("/:id", middleware.ValidateUUID("id"), repositoryHandler.GetRepository)
+				repositories.PUT("/:id", middleware.ValidateUUID("id"), repositoryHandler.UpdateRepository)
+				repositories.DELETE("/:id", middleware.ValidateUUID("id"), repositoryHandler.DeleteRepository)
+				repositories.GET("/:id/scans", middleware.ValidateUUID("id"), repositoryHandler.GetRepositoryScans)
 			}
 
 			// Scan routes
 			scans := protected.Group("/scans")
+			scans.Use(securityMiddleware.RateLimit("scan"))
 			{
 				scans.POST("", scanHandler.CreateScan)
 				scans.GET("", scanHandler.ListScans)
 				scans.GET("/metrics", scanHandler.GetScanMetrics)
-				scans.GET("/:id", scanHandler.GetScan)
-				scans.GET("/:id/status", scanHandler.GetScanStatus)
-				scans.GET("/:id/results", scanHandler.GetScanResults)
-				scans.POST("/:id/cancel", scanHandler.CancelScan)
-				scans.POST("/:id/retry", scanHandler.RetryFailedScan)
-				scans.PATCH("/:id/status", scanHandler.UpdateScanStatus) // Internal use
+				scans.GET("/:id", middleware.ValidateUUID("id"), scanHandler.GetScan)
+				scans.GET("/:id/status", middleware.ValidateUUID("id"), scanHandler.GetScanStatus)
+				scans.GET("/:id/results", middleware.ValidateUUID("id"), scanHandler.GetScanResults)
+				scans.POST("/:id/cancel", middleware.ValidateUUID("id"), scanHandler.CancelScan)
+				scans.POST("/:id/retry", middleware.ValidateUUID("id"), scanHandler.RetryFailedScan)
+				scans.PATCH("/:id/status", middleware.ValidateUUID("id"), scanHandler.UpdateScanStatus) // Internal use
 			}
 
 			// Finding routes
 			findings := protected.Group("/findings")
 			{
 				findings.GET("", findingsHandler.ListFindings)
-				findings.GET("/:id", findingsHandler.GetFinding)
-				findings.PATCH("/:id/status", findingsHandler.UpdateFindingStatus)
-				findings.POST("/:id/suppress", findingsHandler.SuppressFinding)
+				findings.GET("/:id", middleware.ValidateUUID("id"), findingsHandler.GetFinding)
+				findings.PATCH("/:id/status", middleware.ValidateUUID("id"), findingsHandler.UpdateFindingStatus)
+				findings.POST("/:id/suppress", middleware.ValidateUUID("id"), findingsHandler.SuppressFinding)
 				findings.PATCH("/bulk/status", findingsHandler.BulkUpdateFindings)
 				findings.POST("/export", findingsHandler.ExportFindings)
 			}

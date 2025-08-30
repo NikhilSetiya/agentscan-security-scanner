@@ -142,7 +142,7 @@ func (h *AuthHandler) GetAuthURL(c *gin.Context) {
 	authURL := fmt.Sprintf(
 		"https://github.com/login/oauth/authorize?client_id=%s&redirect_uri=%s&scope=%s&state=%s",
 		h.config.Auth.GitHubClientID,
-		url.QueryEscape("http://localhost:3000/auth/callback"), // TODO: Make configurable
+		url.QueryEscape(h.config.Auth.OAuthRedirectURI),
 		url.QueryEscape("user:email"),
 		state,
 	)
@@ -161,7 +161,7 @@ func (h *AuthHandler) GetGitLabAuthURL(c *gin.Context) {
 	authURL := fmt.Sprintf(
 		"https://gitlab.com/oauth/authorize?client_id=%s&redirect_uri=%s&response_type=code&scope=%s&state=%s",
 		h.config.Auth.GitLabClientID,
-		url.QueryEscape("http://localhost:3000/auth/gitlab/callback"), // TODO: Make configurable
+		url.QueryEscape(h.config.Auth.OAuthRedirectURI),
 		url.QueryEscape("read_user"),
 		state,
 	)
@@ -591,7 +591,7 @@ func (h *AuthHandler) exchangeGitLabCode(code string) (string, error) {
 	data.Set("client_secret", h.config.Auth.GitLabSecret)
 	data.Set("code", code)
 	data.Set("grant_type", "authorization_code")
-	data.Set("redirect_uri", "http://localhost:3000/auth/gitlab/callback") // TODO: Make configurable
+	data.Set("redirect_uri", h.config.Auth.OAuthRedirectURI)
 
 	req, err := http.NewRequest("POST", "https://gitlab.com/oauth/token", strings.NewReader(data.Encode()))
 	if err != nil {

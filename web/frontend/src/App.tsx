@@ -9,6 +9,7 @@ import { PageTransition } from './components/ui/Transitions';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AuthProvider, ProtectedRoute, useAuth } from './contexts/AuthContext';
 import { LoginForm } from './components/auth/LoginForm';
+import { OAuthCallback } from './components/auth/OAuthCallback';
 import { ApiDebugPanel } from './components/debug/ApiDebugPanel';
 import { observeLogger } from './services/observeLogger';
 import './styles/globals.css';
@@ -76,6 +77,9 @@ function AppContent() {
         <PageTransition>
           <Suspense fallback={<PageLoader />}>
             <Routes>
+              {/* OAuth callback route (no authentication required) */}
+              <Route path="/auth/callback" element={<OAuthCallback />} />
+              
               <Route path="/" element={
                 <ProtectedRoute>
                   <Dashboard />

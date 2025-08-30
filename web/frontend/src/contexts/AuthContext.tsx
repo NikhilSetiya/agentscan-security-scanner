@@ -23,6 +23,7 @@ type AuthAction =
 // Auth Context Type
 interface AuthContextType {
   state: AuthState;
+  dispatch: React.Dispatch<AuthAction>;
   signIn: (credentials: SignInData) => Promise<boolean>;
   signUp: (credentials: SignUpData) => Promise<boolean>;
   signOut: () => Promise<void>;
@@ -327,6 +328,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const contextValue: AuthContextType = {
     state,
+    dispatch,
     signIn,
     signUp,
     signOut,

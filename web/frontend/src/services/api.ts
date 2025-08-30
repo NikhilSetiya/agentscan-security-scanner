@@ -545,6 +545,15 @@ class ApiClient {
   getAuthToken(): string | null {
     return this.authToken;
   }
+
+  setAuthToken(token: string | null): void {
+    this.authToken = token;
+    if (token) {
+      this.saveAuthToken(token);
+    } else {
+      this.clearAuthToken();
+    }
+  }
 }
 
 // Create and export singleton instance

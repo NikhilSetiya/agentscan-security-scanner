@@ -1,272 +1,435 @@
 # Implementation Plan
 
-- [x] 1. Setup Supabase Project and Authentication
+## Overview
 
-  - Create new Supabase project for AgentScan
-  - Configure authentication providers (email/password, GitHub, GitLab)
-  - Set up Row Level Security (RLS) policies for user data isolation
-  - Create user management tables and functions
+This implementation plan systematically addresses all critical issues identified in the senior software engineer codebase review. The tasks are organized to fix security vulnerabilities first, then architectural issues, performance problems, and finally deployment consolidation. Each task builds incrementally on previous work to ensure a stable transformation to production-ready code.
+
+## Tasks
+
+- [x] 1. Security Vulnerability Remediation (Critical Priority)
+
+  - Create comprehensive input validation and sanitization framework
+  - Implement parameterized queries to prevent SQL injection
+  - Add security middleware for headers and rate limiting
+  - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.6_
+
+- [x] 1.1 Implement Input Validation Framework
+
+  - Create `internal/adapters/http/validators/input.go` with comprehensive validation
+  - Add sanitization for all user inputs using bluemonday
+  - Implement validation middleware for all API endpoints
+  - Add validation tags to all request DTOs
+  - _Requirements: 13.2_
+
+- [x] 1.2 Fix SQL Injection Vulnerabilities
+
+  - Replace string concatenation in `internal/database/repositories.go` with parameterized queries
+  - Update all WHERE clause building to use proper parameter binding
+  - Add SQL query validation to prevent injection attempts
+  - Create secure query builder utilities
+  - _Requirements: 13.1_
+
+- [x] 1.3 Implement Security Middleware
+
+  - Create `internal/adapters/http/middleware/security.go` with security headers
+  - Add rate limiting middleware using Redis
+  - Implement CORS middleware with proper origin validation
+  - Add request logging middleware with security context
+  - _Requirements: 13.6, 13.4_
+
+- [x] 1.4 Add Authentication Consistency
+
+  - Create unified authentication middleware in `internal/adapters/http/middleware/auth.go`
+  - Ensure all protected endpoints use consistent authentication
+  - Implement proper JWT token validation with Supabase
+  - Add role-based access control (RBAC) framework
+  - _Requirements: 13.5_
+
+- [x] 2. Error Handling Standardization
+
+  - Create unified error handling system across all layers
+  - Implement standardized API response format
+  - Add proper error logging with correlation IDs
+  - _Requirements: 16.1, 16.2, 16.3, 16.4_
+
+- [x] 2.1 Create Unified Error System
+
+  - Update `pkg/errors/errors.go` to use `map[string]interface{}` for details
+  - Create `internal/domain/errors/domain.go` with enhanced error types
+  - Add correlation ID and request context to all errors
+  - Implement error wrapping and unwrapping utilities
+  - _Requirements: 16.1, 16.5_
+
+- [x] 2.2 Standardize API Response Format
+
+  - Update `internal/api/responses.go` to use consistent response wrapper
+  - Ensure all API endpoints return standardized format
+  - Add proper error code mapping from domain errors to HTTP status
+  - Implement response metadata with pagination and timestamps
+  - _Requirements: 16.2, 4.1, 4.2_
+
+- [x] 2.3 Implement Error Logging and Monitoring
+
+  - Create `internal/shared/logging/logger.go` with structured logging
+  - Add correlation IDs to all requests using middleware
+  - Implement error tracking and alerting
+  - Add request/response logging with proper sanitization
+  - _Requirements: 16.4, 16.7_
+
+- [x] 2.4 Frontend Error Handling Integration
+
+  - Update `web/frontend/src/utils/errorHandler.ts` to handle new error format
+  - Ensure consistent error display across all components
+  - Add proper error boundaries and fallback UI
+  - Implement retry mechanisms for transient errors
+  - _Requirements: 16.2, 6.5_
+
+- [ ] 3. Code Duplication Elimination and API Refactoring
+
+  - Extract common patterns into reusable middleware and utilities
+  - Refactor API handlers to eliminate 40%+ code duplication
+  - Create standardized pagination and parameter parsing utilities
+  - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.7_
+
+- [x] 3.1 Create Common Middleware
+
+  - Extract user authentication pattern into `internal/adapters/http/middleware/auth.go`
+  - Create pagination middleware in `internal/adapters/http/middleware/pagination.go`
+  - Add UUID parameter validation middleware
+  - Implement request context middleware for correlation IDs
+  - _Requirements: 12.2, 12.4_
+
+- [x] 3.2 Create Utility Functions
+
+  - Extract pagination parsing into `internal/shared/utils/pagination.go`
+  - Create UUID parameter parsing utilities
+  - Add common response helper functions
+  - Implement request validation utilities
+  - _Requirements: 12.3, 12.5_
+
+- [x] 3.3 Refactor API Handlers
+
+  - Update `internal/api/scans.go` to use common middleware and utilities
+  - Refactor `internal/api/repositories.go` to eliminate duplicate patterns
+  - Update `internal/api/dashboard.go` to use standardized patterns
+  - Remove duplicate code from all API handlers
+  - _Requirements: 12.1, 12.6, 12.7_
+
+- [x] 3.4 Create Base Handler Pattern
+
+  - Create `internal/adapters/http/handlers/base.go` with common functionality
+  - Implement standardized error handling in base handler
+  - Add common validation and response methods
+  - Update all handlers to extend base handler
+  - _Requirements: 12.5, 12.6_
+
+- [ ] 4. Database Performance Optimization
+
+  - Add critical database indexes for performance
+  - Resolve N+1 query problems with JOIN queries
+  - Implement efficient pagination strategies
+  - _Requirements: 14.1, 14.2, 14.3, 14.4, 14.6_
+
+- [ ] 4.1 Add Database Indexes
+
+  - Create migration `migrations/011_add_performance_indexes.up.sql`
+  - Add indexes on `scan_jobs(repository_id, status)` for frequent queries
+  - Add indexes on `findings(scan_job_id, severity)` for scan results
+  - Add indexes on `repositories(organization_id, is_active)` for listing
+  - Add composite indexes on `scan_jobs(user_id, created_at DESC)` for user scans
+  - _Requirements: 14.1_
+
+- [ ] 4.2 Resolve N+1 Query Problems
+
+  - Create `internal/infrastructure/database/optimized_queries.go`
+  - Replace N+1 queries in `ListScans` with single JOIN query
+  - Optimize dashboard statistics with aggregate queries
+  - Implement eager loading for scan job details
+  - _Requirements: 14.2, 14.6_
+
+- [ ] 4.3 Optimize Pagination Implementation
+
+  - Create efficient pagination using database LIMIT/OFFSET
+  - Implement cursor-based pagination for large datasets
+  - Add pagination metadata to all list responses
+  - Optimize count queries for pagination
+  - _Requirements: 14.3_
+
+- [ ] 4.4 Create Database Views for Complex Queries
+
+  - Create `dashboard_stats` view for dashboard statistics
+  - Create `scan_jobs_with_details` view for scan listing
+  - Add materialized views for heavy analytical queries
+  - Implement view refresh strategies
+  - _Requirements: 14.5_
+
+- [ ] 5. Repository Pattern Standardization
+
+  - Implement consistent repository interfaces across all entities
+  - Create generic base repository with common CRUD operations
+  - Standardize error handling in repository layer
+  - _Requirements: 17.1, 17.2, 17.4_
+
+- [ ] 5.1 Create Generic Repository Interface
+
+  - Create `internal/domain/repositories/base.go` with generic repository interface
+  - Define standard CRUD operations with proper error handling
+  - Add filtering and pagination support to base interface
+  - Implement repository interface for each entity type
+  - _Requirements: 17.2, 17.4_
+
+- [ ] 5.2 Standardize Repository Implementations
+
+  - Update `internal/database/repositories.go` to implement standardized interfaces
+  - Ensure consistent error handling across all repositories
+  - Add proper transaction support to repository operations
+  - Implement repository health checks and monitoring
+  - _Requirements: 17.1, 17.4_
+
+- [ ] 5.3 Create Repository Factory Pattern
+
+  - Create `internal/infrastructure/database/factory.go` for repository creation
+  - Implement dependency injection for repository interfaces
+  - Add repository configuration and connection management
+  - Create repository testing utilities and mocks
+  - _Requirements: 17.3_
+
+- [ ] 6. Clean Architecture Implementation
+
+  - Separate business logic from infrastructure concerns
+  - Implement proper layer boundaries and dependency inversion
+  - Create application services and domain services
+  - _Requirements: 17.1, 17.3, 17.5, 17.6_
+
+- [ ] 6.1 Create Domain Layer
+
+  - Create `internal/domain/entities/` with core business entities
+  - Implement `internal/domain/services/` for business logic
+  - Add `internal/domain/repositories/` for repository interfaces
+  - Create domain-specific error types and validation
+  - _Requirements: 17.1, 17.6_
+
+- [ ] 6.2 Implement Application Layer
+
+  - Create `internal/application/commands/` for command handlers (CQRS)
+  - Implement `internal/application/queries/` for query handlers
+  - Add `internal/application/dto/` for data transfer objects
+  - Create application services for orchestrating domain operations
+  - _Requirements: 17.3, 17.5_
+
+- [ ] 6.3 Refactor Infrastructure Layer
+
+  - Move database implementations to `internal/infrastructure/database/`
+  - Create `internal/infrastructure/external/` for external service clients
+  - Add `internal/infrastructure/cache/` for caching implementations
+  - Implement proper dependency injection and configuration
+  - _Requirements: 17.1, 17.3_
+
+- [ ] 6.4 Create Adapter Layer
+
+  - Move HTTP handlers to `internal/adapters/http/handlers/`
+  - Create thin adapter layer that delegates to application services
+  - Implement proper request/response mapping
+  - Add adapter-specific validation and error handling
+  - _Requirements: 17.4, 17.5_
+
+- [ ] 7. Frontend Architecture Improvements
+
+  - Standardize API client patterns and error handling
+  - Implement consistent state management
+  - Add proper loading states and error boundaries
+  - _Requirements: 3.1, 3.2, 3.3, 3.4, 6.1, 6.2, 6.5_
+
+- [ ] 7.1 Standardize API Client Patterns
+
+  - Update `web/frontend/src/services/api.ts` to handle new response format
+  - Ensure consistent error handling across all API calls
+  - Implement proper retry mechanisms and timeout handling
+  - Add request/response interceptors for logging and monitoring
+  - _Requirements: 3.1, 3.2_
+
+- [ ] 7.2 Improve Hook-based State Management
+
+  - Update `web/frontend/src/hooks/useApi.ts` for consistent patterns
+  - Implement proper loading states and error handling
+  - Add caching and invalidation strategies
+  - Create specialized hooks for different data types
+  - _Requirements: 3.3, 3.4_
+
+- [ ] 7.3 Enhance Error Handling and UX
+
+  - Update error handler to work with new backend error format
+  - Implement proper error boundaries and fallback UI
+  - Add user-friendly error messages and recovery options
+  - Create loading skeletons and empty states
+  - _Requirements: 6.1, 6.2, 6.5_
+
+- [ ] 7.4 Add Real-time Updates and Monitoring
+
+  - Implement WebSocket connections for real-time scan updates
+  - Add proper connection state management
+  - Create observability integration with backend monitoring
+  - Add performance monitoring and error tracking
+  - _Requirements: 11.1, 11.2, 11.3_
+
+- [ ] 8. Deployment Configuration Consolidation
+
+  - Consolidate multiple deployment configurations into single strategy
+  - Create environment-specific deployment scripts
+  - Implement proper health checks and monitoring
+  - _Requirements: 15.1, 15.2, 15.3, 15.4, 15.6_
+
+- [ ] 8.1 Consolidate Docker Configurations
+
+  - Create single `deployment/production/Dockerfile` with multi-stage build
+  - Remove conflicting `Dockerfile.api` and `Dockerfile.orchestrator`
+  - Implement consistent base images and security practices
+  - Add proper health check endpoints and monitoring
+  - _Requirements: 15.1, 15.2_
+
+- [ ] 8.2 Standardize Deployment Scripts
+
+  - Create `deployment/scripts/deploy-production.sh` as single deployment script
+  - Remove conflicting deployment scripts and configurations
+  - Add environment validation and prerequisite checks
+  - Implement proper rollback and recovery procedures
+  - _Requirements: 15.4, 15.7_
+
+- [ ] 8.3 Environment Configuration Management
+
+  - Create environment-specific configuration files
+  - Implement proper secrets management with Supabase
+  - Add configuration validation and error handling
+  - Create configuration documentation and examples
+  - _Requirements: 15.3, 8.1, 8.2, 8.3_
+
+- [ ] 8.4 Health Checks and Monitoring
+
+  - Implement comprehensive health check endpoints
+  - Add monitoring and alerting for all services
+  - Create deployment verification and smoke tests
+  - Add performance monitoring and logging
+  - _Requirements: 15.5, 15.6_
+
+- [ ] 9. Supabase Authentication Integration
+
+  - Integrate Supabase authentication with backend
+  - Implement proper token validation and user management
+  - Add secure session handling and token refresh
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8_
 
-- [x] 2. Implement Supabase Secrets Management
+- [ ] 9.1 Backend Supabase Integration
 
-  - Set up Supabase Vault for secrets storage
-  - Create secrets management service for backend
-  - Migrate existing environment variables to Supabase secrets
-  - Implement secure secret retrieval in backend services
-  - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
+  - Create `internal/infrastructure/auth/supabase.go` for Supabase client
+  - Implement JWT token validation with Supabase
+  - Add user creation and management through Supabase
+  - Create authentication middleware using Supabase tokens
+  - _Requirements: 2.1, 2.2, 2.4_
 
-- [x] 3. Fix Frontend API Configuration
+- [ ] 9.2 Frontend Supabase Integration
 
-  - Update environment variables for production API endpoints
-  - Fix CORS configuration in backend for Vercel domain
-  - Implement proper error handling for API connectivity issues
-  - Add retry logic and timeout handling for API calls
-  - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
+  - Update frontend to use Supabase client for authentication
+  - Implement login, signup, and password reset flows
+  - Add proper session management and token refresh
+  - Create authentication context and protected routes
+  - _Requirements: 2.3, 2.5, 2.6, 2.7, 2.8_
 
-- [x] 4. Integrate Observe MCP for Debugging
+- [ ] 9.3 User Management and Profiles
 
-  - Set up Observe MCP project and obtain API credentials
-  - Implement Observe MCP client in frontend for request logging
-  - Add Observe MCP middleware to backend for comprehensive logging
-  - Create custom dashboards for API monitoring and debugging
-  - Set up alerts for critical errors and performance issues
-  - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
+  - Create user profile management with Supabase
+  - Implement user role and permission management
+  - Add user settings and preferences
+  - Create user onboarding and verification flows
+  - _Requirements: 2.1, 2.7, 2.8_
 
-- [x] 5. Replace Frontend Authentication System
-- [x] 5.1 Install and configure Supabase client in frontend
+- [ ] 10. Production Environment Configuration
 
-  - Install @supabase/supabase-js package
-  - Create Supabase client configuration with environment variables
-  - Set up authentication context with Supabase integration
-  - _Requirements: 2.1, 2.3_
+  - Configure production settings for security and performance
+  - Implement proper logging and monitoring
+  - Add environment-specific optimizations
+  - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 7.1, 7.2, 7.3, 7.4, 7.5_
 
-- [x] 5.2 Update AuthContext to use Supabase
+- [ ] 10.1 Production Security Configuration
 
-  - Replace JWT-based authentication with Supabase auth
-  - Implement sign in, sign up, and sign out functions
-  - Add session management and automatic token refresh
-  - Handle authentication state changes and persistence
-  - _Requirements: 2.2, 2.4, 2.5, 2.6_
+  - Configure HTTPS enforcement and security headers
+  - Implement proper CORS configuration for production domains
+  - Add rate limiting and DDoS protection
+  - Configure secure cookie and session settings
+  - _Requirements: 7.1, 7.3, 7.4, 7.5_
 
-- [x] 5.3 Update LoginForm component for Supabase
+- [ ] 10.2 Performance and Monitoring Configuration
 
-  - Modify login form to use Supabase authentication
-  - Add sign up functionality and form validation
-  - Implement password reset functionality
-  - Add proper error handling and user feedback
-  - _Requirements: 2.7, 2.8_
+  - Configure production logging with structured format
+  - Add performance monitoring and metrics collection
+  - Implement health checks and alerting
+  - Configure database connection pooling and optimization
+  - _Requirements: 5.1, 5.5, 7.2_
 
-- [x] 6. Update Backend Authentication Middleware
-- [x] 6.1 Implement Supabase token validation
+- [ ] 10.3 Environment Variable Management
 
-  - Create Supabase client for backend token validation
-  - Update authentication middleware to validate Supabase tokens
-  - Implement user context extraction from Supabase tokens
-  - _Requirements: 2.4, 4.3_
+  - Create comprehensive environment variable documentation
+  - Implement environment validation and fail-fast behavior
+  - Add secrets management with Supabase vault
+  - Create environment-specific configuration templates
+  - _Requirements: 5.2, 5.3, 8.4_
 
-- [x] 6.2 Update user management endpoints
+- [ ] 11. Real Data Integration and Testing
 
-  - Modify user creation and retrieval to work with Supabase
-  - Update user profile management endpoints
-  - Implement proper error handling for authentication failures
-  - _Requirements: 4.2, 4.4_
+  - Replace dummy data with real database integration
+  - Implement comprehensive testing for all components
+  - Add integration tests for critical workflows
+  - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.5_
 
-- [x] 7. Standardize API Response Format
-- [x] 7.1 Update backend response wrapper
+- [ ] 11.1 Database Integration Testing
 
-  - Implement consistent APIResponse struct across all endpoints
-  - Standardize error response format with proper HTTP status codes
-  - Add pagination metadata to list endpoints
-  - _Requirements: 4.1, 4.2, 4.4_
-
-- [x] 7.2 Update frontend API client
-
-  - Modify API client to handle new response format
-  - Update error handling to work with standardized errors
-  - Implement proper loading states and error boundaries
-  - _Requirements: 3.5, 6.1, 6.2_
-
-- [x] 8. Replace Dummy Data with Real Database Integration
-- [x] 8.1 Update database schema for production
-
-  - Create or update users table with Supabase integration
-  - Ensure repositories and scans tables have proper relationships
-  - Add indexes for performance optimization
+  - Create integration tests for all repository implementations
+  - Test database performance with realistic data volumes
+  - Verify index effectiveness and query optimization
+  - Add database migration testing and rollback procedures
   - _Requirements: 11.1, 11.2_
 
-- [x] 8.2 Implement real dashboard data endpoints
+- [ ] 11.2 API Integration Testing
 
-  - Replace mock dashboard stats with actual database queries
-  - Implement real-time statistics calculation
-  - Add caching for frequently accessed dashboard data
-  - _Requirements: 11.1, 11.4_
+  - Create end-to-end tests for all API endpoints
+  - Test authentication and authorization flows
+  - Verify error handling and response formats
+  - Add performance testing for critical endpoints
+  - _Requirements: 11.3, 11.4_
 
-- [x] 8.3 Implement real repository management
+- [ ] 11.3 Frontend Integration Testing
 
-  - Create endpoints for adding, updating, and deleting repositories
-  - Implement repository validation and GitHub/GitLab integration
-  - Add repository scanning history and statistics
-  - _Requirements: 11.2_
+  - Test frontend with real backend API integration
+  - Verify data display and user interactions
+  - Test error handling and loading states
+  - Add accessibility and responsive design testing
+  - _Requirements: 11.5, 10.6, 10.7_
 
-- [x] 8.4 Implement real scan management
+- [ ] 12. Final Production Deployment and Verification
 
-  - Replace mock scan data with actual scan records
-  - Implement scan creation, monitoring, and result storage
-  - Add real-time scan progress updates via WebSocket
-  - _Requirements: 11.3, 9.4, 9.5_
+  - Deploy all components to production environment
+  - Verify all functionality works with real data
+  - Perform comprehensive smoke testing
+  - _Requirements: All requirements verification_
 
-- [ ] 9. Implement Functional Scan Creation System
-- [ ] 9.1 Create scan configuration modal
+- [ ] 12.1 Production Deployment
 
-  - Design and implement new scan creation modal
-  - Add repository selection with validation
-  - Implement scan type and agent selection interface
-  - _Requirements: 9.1, 9.2, 9.3_
+  - Deploy backend to Fly.io with new configuration
+  - Deploy frontend to Vercel with updated settings
+  - Configure production database and Redis
+  - Set up monitoring and alerting systems
+  - _Requirements: 1.1, 5.4, 15.6_
 
-- [ ] 9.2 Implement scan submission and queuing
+- [ ] 12.2 Smoke Testing and Verification
 
-  - Create scan submission endpoint with proper validation
-  - Implement job queuing system for scan processing
-  - Add scan priority and scheduling options
-  - _Requirements: 9.4_
+  - Test all critical user workflows end-to-end
+  - Verify authentication and authorization
+  - Test scan creation and management functionality
+  - Validate performance and security measures
+  - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7_
 
-- [ ] 9.3 Add real-time scan monitoring
-
-  - Implement WebSocket connection for scan progress updates
-  - Create scan progress indicators and status displays
-  - Add scan cancellation and retry functionality
-  - _Requirements: 9.5, 9.7_
-
-- [ ] 9.4 Implement scan results display
-
-  - Create detailed scan results page with real findings
-  - Implement findings filtering and sorting
-  - Add export functionality for scan results
-  - _Requirements: 9.6, 11.3_
-
-- [ ] 10. Overhaul UI/UX with Modern Design System
-- [ ] 10.1 Implement modern design system
-
-  - Create comprehensive color palette and typography scale
-  - Implement reusable component library with consistent styling
-  - Add proper spacing, shadows, and border radius system
-  - _Requirements: 10.1, 10.4_
-
-- [ ] 10.2 Update dashboard with modern design
-
-  - Redesign dashboard layout with modern card-based design
-  - Implement responsive grid system for statistics cards
-  - Add interactive charts and graphs for trend data
-  - Create proper empty states and loading skeletons
-  - _Requirements: 10.1, 10.2, 10.5_
-
-- [ ] 10.3 Redesign scan management interface
-
-  - Update scans table with modern styling and better data presentation
-  - Implement advanced filtering and search functionality
-  - Add bulk actions and improved scan status indicators
-  - Create better scan details and results visualization
-  - _Requirements: 10.1, 10.4, 10.5_
-
-- [ ] 10.4 Implement responsive mobile design
-
-  - Ensure all components work properly on mobile devices
-  - Implement mobile-friendly navigation and interactions
-  - Add touch-friendly buttons and form elements
-  - Test and optimize for various screen sizes
-  - _Requirements: 10.6_
-
-- [ ] 10.5 Add smooth transitions and animations
-
-  - Implement page transitions and loading animations
-  - Add hover effects and interactive feedback
-  - Create smooth state transitions for better UX
-  - _Requirements: 10.2, 10.7_
-
-- [ ] 11. Implement Comprehensive Error Handling
-- [ ] 11.1 Add frontend error boundaries
-
-  - Implement global error boundary for React application
-  - Create specific error boundaries for major components
-  - Add error reporting integration with Observe MCP
-  - _Requirements: 6.1, 6.2_
-
-- [ ] 11.2 Improve backend error handling
-
-  - Standardize error handling across all API endpoints
-  - Implement proper logging with Observe MCP integration
-  - Add error monitoring and alerting
-  - _Requirements: 4.3, 6.3_
-
-- [ ] 11.3 Add user-friendly error messages
-
-  - Replace technical error messages with user-friendly ones
-  - Implement contextual help and recovery suggestions
-  - Add proper validation messages for forms
-  - _Requirements: 6.1, 6.4, 10.7_
-
-- [ ] 12. Setup Production Environment Configuration
-- [ ] 12.1 Configure production environment variables
-
-  - Set up proper environment variables for Vercel frontend
-  - Configure fly.io backend with Supabase integration
-  - Implement secure secrets management in production
-  - _Requirements: 5.1, 5.2, 5.3_
-
-- [ ] 12.2 Configure CORS and security headers
-
-  - Update CORS configuration for production domains
-  - Implement proper security headers for production
-  - Add rate limiting and DDoS protection
-  - _Requirements: 1.5, 5.4, 7.1, 7.2, 7.3_
-
-- [ ] 12.3 Set up monitoring and alerting
-
-  - Configure Observe MCP dashboards for production monitoring
-  - Set up alerts for critical system failures
-  - Implement health checks and uptime monitoring
-  - _Requirements: 5.5, 6.5_
-
-- [ ] 13. Implement Comprehensive Testing
-- [ ] 13.1 Add frontend component tests
-
-  - Write unit tests for all major components
-  - Test Supabase authentication integration
-  - Add integration tests for API client
-  - _Requirements: All frontend requirements_
-
-- [ ] 13.2 Add backend API tests
-
-  - Write unit tests for all API endpoints
-  - Test Supabase integration and token validation
-  - Add integration tests for scan workflow
-  - _Requirements: All backend requirements_
-
-- [ ] 13.3 Add end-to-end tests
-
-  - Create E2E tests for complete user workflows
-  - Test authentication flow from login to scan creation
-  - Add tests for scan monitoring and results viewing
-  - _Requirements: All user workflow requirements_
-
-- [ ] 14. Performance Optimization and Final Polish
-- [ ] 14.1 Optimize frontend performance
-
-  - Implement code splitting and lazy loading
-  - Optimize bundle size and loading times
-  - Add proper caching strategies
-  - _Requirements: 10.2_
-
-- [ ] 14.2 Optimize backend performance
-
-  - Implement database query optimization
-  - Add Redis caching for frequently accessed data
-  - Optimize scan processing pipeline
-  - _Requirements: 1.1, 9.5_
-
-- [ ] 14.3 Final testing and deployment
-  - Perform comprehensive testing in staging environment
-  - Deploy to production with proper monitoring
-  - Verify all functionality works end-to-end
-  - _Requirements: All requirements_
+- [ ] 12.3 Documentation and Handover
+  - Create comprehensive deployment documentation
+  - Document all configuration and environment variables
+  - Create troubleshooting guides and runbooks
+  - Add monitoring and alerting documentation
+  - _Requirements: 5.5, 15.5, 15.6_
