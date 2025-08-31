@@ -1,0 +1,153 @@
+# Test configuration for AgentScan
+app:
+  name: "AgentScan Test"
+  version: "test"
+  environment: "test"
+  debug: true
+
+server:
+  host: "localhost"
+  port: 0  # Random port for testing
+  read_timeout: "30s"
+  write_timeout: "30s"
+  idle_timeout: "60s"
+  shutdown_timeout: "5s"
+
+database:
+  url: "postgres://test:test@localhost:5432/agentscan_test?sslmode=disable"
+  max_open_conns: 5
+  max_idle_conns: 2
+  conn_max_lifetime: "5m"
+  conn_max_idle_time: "5m"
+
+redis:
+  url: "redis://localhost:6379/0"
+  max_retries: 3
+  pool_size: 5
+  pool_timeout: "4s"
+
+security:
+  jwt:
+    secret: "test_jwt_secret_32_characters_long_enough_for_testing"
+    algorithm: "HS256"
+    issuer: "agentscan-test"
+    audience: "agentscan-api"
+    ttl: "1h"
+  
+  https:
+    enabled: false  # Disabled for testing
+    cert_file: ""
+    key_file: ""
+    redirect_http: false
+  
+  cors:
+    enabled: true
+    allowed_origins:
+      - "http://localhost:3000"
+      - "https://localhost:3000"
+      - "http://127.0.0.1:3000"
+    allowed_methods:
+      - "GET"
+      - "POST"
+      - "PUT"
+      - "DELETE"
+      - "OPTIONS"
+    allowed_headers:
+      - "Content-Type"
+      - "Authorization"
+      - "X-Requested-With"
+    exposed_headers:
+      - "X-Total-Count"
+    allow_credentials: true
+    max_age: 3600
+  
+  headers:
+    enabled: true
+    hsts:
+      enabled: false  # Disabled for HTTP testing
+      max_age: 31536000
+      include_subdomains: true
+      preload: true
+    csp:
+      enabled: true
+      policy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+      report_uri: "/csp-report"
+  
+  rate_limit:
+    enabled: true
+    requests: 100
+    window: "1m"
+    burst: 10
+
+monitoring:
+  enabled: true
+  metrics_enabled: true
+  health_check_enabled: true
+  pprof_enabled: true  # Enabled for testing/debugging
+
+logging:
+  level: "debug"
+  format: "json"
+  output: "stdout"
+
+supabase:
+  url: "https://test.supabase.co"
+  service_role_key: "test_service_role_key_32_characters_long_enough_for_testing"
+  anon_key: "test_anon_key_32_characters_long_enough_for_testing"
+
+# Test-specific configurations
+test:
+  database:
+    # Use testcontainers for integration tests
+    use_testcontainers: true
+    container_image: "postgres:15-alpine"
+    
+  redis:
+    # Use testcontainers for integration tests
+    use_testcontainers: true
+    container_image: "redis:7-alpine"
+  
+  # Test data configuration
+  fixtures:
+    load_fixtures: true
+    fixture_path: "tests/testdata/fixtures"
+  
+  # Test timeouts
+  timeouts:
+    unit_test: "30s"
+    integration_test: "2m"
+    e2e_test: "5m"
+  
+  # Test coverage
+  coverage:
+    threshold: 80
+    exclude_patterns:
+      - "*.pb.go"
+      - "*_mock.go"
+      - "testdata/*"
+      - "vendor/*"
+
+# Environment-specific overrides for different test scenarios
+test_scenarios:
+  unit:
+    database:
+      use_testcontainers: false
+      url: "sqlite://file::memory:?cache=shared"
+    redis:
+      use_testcontainers: false
+      url: "redis://localhost:6379/1"
+  
+  integration:
+    database:
+      use_testcontainers: true
+    redis:
+      use_testcontainers: true
+  
+  e2e:
+    database:
+      use_testcontainers: true
+    redis:
+      use_testcontainers: true
+    external_services:
+      mock_external_apis: false
+      use_real_services: true
