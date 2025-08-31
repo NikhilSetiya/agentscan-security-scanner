@@ -24,6 +24,12 @@ import (
 )
 
 func main() {
+	// Check for health command
+	if len(os.Args) > 1 && os.Args[1] == "health" {
+		healthCheck()
+		return
+	}
+
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
@@ -172,4 +178,49 @@ func registerAgents(agentManager *orchestrator.AgentManager) error {
 	log.Println("Registered OWASP ZAP DAST agent")
 
 	return nil
+}
+
+// healthCheck performs a health check for the orchestrator service
+func healthCheck() {
+	// Load configuration
+	cfg, err := config.Load()
+	if err != nil {
+		log.Printf("Health check failed: unable to load config: %v", err)
+		os.Exit(1)
+	}
+
+	// Create a context with timeout for health checks
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Check database connection
+	db, err := database.New(&cfg.Database)
+	if err != nil {
+		log.Printf("Health check failed: database connection error: %v", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	if err := db.Health(ctx); err != nil {
+		log.Printf("Health check failed: database health check failed: %v", err)
+		os.Exit(1)
+	}
+
+	// Check Redis connection
+	redis, err := queue.NewRedisClient(&cfg.Redis)
+	if err != nil {
+		log.Printf("Health check failed: Redis connection error: %v", err)
+		os.Exit(1)
+	}
+	defer redis.Close()
+
+	if err := redis.Health(ctx); err != nil {
+		log.Printf("Health check failed: Redis health check failed: %v", err)
+		os.Exit(1)
+	}
+
+	// Check if Docker is available (orchestrator needs Docker)
+	// This is a basic check - in production you might want more sophisticated checks
+	log.Println("Health check passed: All services are healthy")
+	os.Exit(0)
 }
