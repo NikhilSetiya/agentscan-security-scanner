@@ -7,25 +7,29 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 
 	"github.com/NikhilSetiya/agentscan-security-scanner/internal/database"
 	"github.com/NikhilSetiya/agentscan-security-scanner/internal/orchestrator"
 	"github.com/NikhilSetiya/agentscan-security-scanner/internal/queue"
 	"github.com/NikhilSetiya/agentscan-security-scanner/internal/shared/utils"
 	"github.com/NikhilSetiya/agentscan-security-scanner/internal/adapters/http/middleware"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/adapters/http/handlers"
 	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/types"
 )
 
 // ScanHandler handles scan-related endpoints
 type ScanHandler struct {
+	*handlers.BaseHandler
 	repos        *database.Repositories
 	orchestrator orchestrator.OrchestrationService
 	queue        *queue.Queue
 }
 
 // NewScanHandler creates a new scan handler
-func NewScanHandler(repos *database.Repositories, orch orchestrator.OrchestrationService, q *queue.Queue) *ScanHandler {
+func NewScanHandler(repos *database.Repositories, orch orchestrator.OrchestrationService, q *queue.Queue, logger *zap.Logger) *ScanHandler {
 	return &ScanHandler{
+		BaseHandler:  handlers.NewBaseHandler(logger),
 		repos:        repos,
 		orchestrator: orch,
 		queue:        q,
@@ -40,8 +44,9 @@ func (h *ScanHandler) CreateScan(c *gin.Context) {
 		return
 	}
 
-	userContext := middleware.GetUserContextFromGin(c)
-	if userContext == nil {
+	// Get authenticated user from middleware
+	userID, _, _, err := middleware.GetUserFromContext(c)
+	if err != nil {
 		utils.UnauthorizedResponse(c, "User authentication required")
 		return
 	}
@@ -99,7 +104,7 @@ func (h *ScanHandler) CreateScan(c *gin.Context) {
 	scanJob := &types.ScanJob{
 		ID:               uuid.New(),
 		RepositoryID:     repo.ID,
-		UserID:           &userContext.UserID,
+		UserID:           &userID,
 		Branch:           branch,
 		CommitSHA:        commitSHA,
 		ScanType:         req.ScanType,
@@ -118,7 +123,7 @@ func (h *ScanHandler) CreateScan(c *gin.Context) {
 	// Submit to orchestrator for processing
 	scanReq := &orchestrator.ScanRequest{
 		RepositoryID: repo.ID,
-		UserID:       &userContext.UserID,
+		UserID:       &userID,
 		RepoURL:      req.RepositoryURL,
 		Branch:       branch,
 		CommitSHA:    commitSHA,
@@ -197,22 +202,23 @@ func (h *ScanHandler) GetScan(c *gin.Context) {
 
 // ListScans lists scans with optional filtering
 func (h *ScanHandler) ListScans(c *gin.Context) {
-	// Parse pagination and filters
+	// Parse pagination and filters using utilities
 	pagination := utils.ParsePaginationFromQuery(c, 20, 100)
 	filters := utils.ParseFilterParams(c)
 	
 	scanType := utils.ParseStringQuery(c, "scan_type", 50)
 	repositoryID, _ := utils.ParseUUIDQuery(c, "repository_id")
 
-	userContext := middleware.GetUserContextFromGin(c)
-	if userContext == nil {
+	// Get authenticated user from middleware
+	userID, _, _, err := middleware.GetUserFromContext(c)
+	if err != nil {
 		utils.UnauthorizedResponse(c, "User authentication required")
 		return
 	}
 
-	// Build filter
+	// Build filter using standardized approach
 	filter := &database.ScanJobFilter{
-		UserID: &userContext.UserID,
+		UserID: &userID,
 	}
 
 	if filters.Status != "" {
@@ -227,13 +233,14 @@ func (h *ScanHandler) ListScans(c *gin.Context) {
 		filter.RepositoryID = repositoryID
 	}
 
-	dbPagination := &database.Pagination{
-		Page:     pagination.Page,
-		PageSize: pagination.PageSize,
-	}
+	// Convert to database pagination format
+	dbPagination := pagination.ToDatabase()
 
 	// Get scan jobs from database
-	scanJobs, total, err := h.repos.ScanJobs.List(c.Request.Context(), filter, dbPagination)
+	scanJobs, total, err := h.repos.ScanJobs.List(c.Request.Context(), filter, &database.Pagination{
+		Page:     pagination.Page,
+		PageSize: pagination.PageSize,
+	})
 	if err != nil {
 		utils.ErrorResponse(c, err)
 		return
@@ -335,7 +342,7 @@ func (h *ScanHandler) ListScans(c *gin.Context) {
 		scans = append(scans, scanData)
 	}
 
-	// Return in format expected by frontend (ScanListResponse) using new pagination structure
+	// Return paginated response using standardized format
 	responseData := map[string]interface{}{
 		"scans": scans,
 	}
@@ -428,8 +435,9 @@ func (h *ScanHandler) UpdateScanStatus(c *gin.Context) {
 
 // GetScanMetrics returns scan metrics and statistics
 func (h *ScanHandler) GetScanMetrics(c *gin.Context) {
-	userContext := middleware.GetUserContextFromGin(c)
-	if userContext == nil {
+	// Get authenticated user from middleware
+	_, _, _, err := middleware.GetUserFromContext(c)
+	if err != nil {
 		utils.UnauthorizedResponse(c, "User authentication required")
 		return
 	}
@@ -465,14 +473,15 @@ func (h *ScanHandler) RetryFailedScan(c *gin.Context) {
 		return
 	}
 
-	userContext := middleware.GetUserContextFromGin(c)
-	if userContext == nil {
+	// Get authenticated user from middleware
+	userID, _, _, err := middleware.GetUserFromContext(c)
+	if err != nil {
 		utils.UnauthorizedResponse(c, "User authentication required")
 		return
 	}
 
 	// Check if user owns this scan
-	if scanJob.UserID == nil || *scanJob.UserID != userContext.UserID {
+	if scanJob.UserID == nil || *scanJob.UserID != userID {
 		utils.ForbiddenResponse(c, "You don't have permission to retry this scan")
 		return
 	}
@@ -491,7 +500,7 @@ func (h *ScanHandler) RetryFailedScan(c *gin.Context) {
 	scanJob.AgentsCompleted = []string{}
 
 	if err := h.repos.ScanJobs.Update(c.Request.Context(), scanJob); err != nil {
-		ErrorResponseFromError(c, err)
+		utils.ErrorResponse(c, err)
 		return
 	}
 
@@ -510,9 +519,9 @@ func (h *ScanHandler) RetryFailedScan(c *gin.Context) {
 
 	// Resubmit to orchestrator
 	if _, err := h.orchestrator.SubmitScan(c.Request.Context(), scanReq); err != nil {
-		ErrorResponseFromError(c, err)
+		utils.ErrorResponse(c, err)
 		return
 	}
 
-	SuccessResponse(c, ToScanJobDTO(scanJob))
+	utils.SuccessResponse(c, ToScanJobDTO(scanJob))
 }

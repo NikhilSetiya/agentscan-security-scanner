@@ -3,27 +3,32 @@ package api
 import (
 	"fmt"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 
 	"github.com/NikhilSetiya/agentscan-security-scanner/internal/database"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/shared/utils"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/adapters/http/middleware"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/adapters/http/handlers"
 	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/errors"
 	"github.com/NikhilSetiya/agentscan-security-scanner/pkg/types"
 )
 
 // RepositoryHandler handles repository-related endpoints
 type RepositoryHandler struct {
+	*handlers.BaseHandler
 	repos *database.Repositories
 }
 
 // NewRepositoryHandler creates a new repository handler
-func NewRepositoryHandler(repos *database.Repositories) *RepositoryHandler {
+func NewRepositoryHandler(repos *database.Repositories, logger *zap.Logger) *RepositoryHandler {
 	return &RepositoryHandler{
-		repos: repos,
+		BaseHandler: handlers.NewBaseHandler(logger),
+		repos:       repos,
 	}
 }
 
@@ -46,22 +51,14 @@ type UpdateRepositoryRequest struct {
 
 // ListRepositories retrieves a paginated list of repositories
 func (h *RepositoryHandler) ListRepositories(c *gin.Context) {
-	// Parse pagination parameters
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	search := c.Query("search")
+	// Parse pagination parameters using standardized utility
+	pagination := utils.ParsePaginationFromQuery(c, 20, 100)
+	search := utils.ParseStringQuery(c, "search", 255)
 
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 || pageSize > 100 {
-		pageSize = 20
-	}
-
-	// Get current user for organization context
-	_, exists := GetCurrentUserID(c)
-	if !exists {
-		UnauthorizedResponse(c, "User authentication required")
+	// Get authenticated user from middleware
+	_, _, _, err := middleware.GetUserFromContext(c)
+	if err != nil {
+		utils.UnauthorizedResponse(c, "User authentication required")
 		return
 	}
 
@@ -69,14 +66,14 @@ func (h *RepositoryHandler) ListRepositories(c *gin.Context) {
 	// In a real implementation, you'd get the user's organization
 	var orgID *uuid.UUID = nil
 
-	pagination := &database.Pagination{
-		Page:     page,
-		PageSize: pageSize,
+	dbPagination := &database.Pagination{
+		Page:     pagination.Page,
+		PageSize: pagination.PageSize,
 	}
 
-	repoList, total, err := h.repos.Repositories.List(c.Request.Context(), orgID, pagination)
+	repoList, total, err := h.repos.Repositories.List(c.Request.Context(), orgID, dbPagination)
 	if err != nil {
-		ErrorResponseFromError(c, err)
+		utils.ErrorResponse(c, err)
 		return
 	}
 
@@ -121,28 +118,27 @@ func (h *RepositoryHandler) ListRepositories(c *gin.Context) {
 		"repositories": repositories,
 	}
 
-	PaginatedResponse(c, responseData, page, pageSize, total)
+	utils.PaginatedResponse(c, responseData, pagination.Page, pagination.PageSize, total)
 }
 
 // GetRepository retrieves a single repository by ID
 func (h *RepositoryHandler) GetRepository(c *gin.Context) {
-	repoIDStr := c.Param("id")
-	repoID, err := uuid.Parse(repoIDStr)
+	repoID, err := utils.ParseUUIDParam(c, "id")
 	if err != nil {
-		BadRequestResponse(c, "Invalid repository ID")
+		utils.ErrorResponse(c, err)
 		return
 	}
 
-	// Get current user for authorization
-	_, exists := GetCurrentUserID(c)
-	if !exists {
-		UnauthorizedResponse(c, "User authentication required")
+	// Get authenticated user from middleware
+	_, _, _, err = middleware.GetUserFromContext(c)
+	if err != nil {
+		utils.UnauthorizedResponse(c, "User authentication required")
 		return
 	}
 
 	repo, err := h.repos.Repositories.GetByID(c.Request.Context(), repoID)
 	if err != nil {
-		ErrorResponseFromError(c, err)
+		utils.ErrorResponse(c, err)
 		return
 	}
 
@@ -162,44 +158,42 @@ func (h *RepositoryHandler) GetRepository(c *gin.Context) {
 		repoData["last_scan_at"] = repo.LastScanAt.Format(time.RFC3339)
 	}
 
-	SuccessResponse(c, repoData)
+	utils.SuccessResponse(c, repoData)
 }
 
 // CreateRepository creates a new repository
 func (h *RepositoryHandler) CreateRepository(c *gin.Context) {
 	var req CreateRepositoryRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		ValidationErrorResponse(c, "Invalid repository data", map[string]interface{}{
-			"validation_errors": err.Error(),
-		})
+	if err := utils.ValidateAndBindJSON(c, &req); err != nil {
+		utils.ErrorResponse(c, err)
 		return
 	}
 
-	// Get current user for organization context
-	_, exists := GetCurrentUserID(c)
-	if !exists {
-		UnauthorizedResponse(c, "User authentication required")
+	// Get authenticated user from middleware
+	_, _, _, err := middleware.GetUserFromContext(c)
+	if err != nil {
+		utils.UnauthorizedResponse(c, "User authentication required")
 		return
 	}
 
 	// Validate and parse repository URL
 	parsedURL, err := url.Parse(req.URL)
 	if err != nil {
-		BadRequestResponse(c, "Invalid repository URL")
+		utils.BadRequestResponse(c, "Invalid repository URL")
 		return
 	}
 
 	// Extract provider and provider ID from URL
 	provider, providerID, err := h.parseRepositoryURL(parsedURL)
 	if err != nil {
-		BadRequestResponse(c, err.Error())
+		utils.BadRequestResponse(c, err.Error())
 		return
 	}
 
 	// Check if repository already exists
 	existingRepo, err := h.repos.Repositories.GetByURL(c.Request.Context(), req.URL)
 	if err == nil && existingRepo != nil {
-		ConflictResponse(c, "Repository with this URL already exists")
+		utils.ConflictResponse(c, "Repository with this URL already exists")
 		return
 	}
 
@@ -226,7 +220,7 @@ func (h *RepositoryHandler) CreateRepository(c *gin.Context) {
 	}
 
 	if err := h.repos.Repositories.Create(c.Request.Context(), repo); err != nil {
-		ErrorResponseFromError(c, err)
+		utils.ErrorResponse(c, err)
 		return
 	}
 
@@ -241,37 +235,34 @@ func (h *RepositoryHandler) CreateRepository(c *gin.Context) {
 		"created_at":  repo.CreatedAt.Format(time.RFC3339),
 	}
 
-	CreatedResponse(c, repoData)
+	utils.CreatedResponse(c, repoData)
 }
 
 // UpdateRepository updates an existing repository
 func (h *RepositoryHandler) UpdateRepository(c *gin.Context) {
-	repoIDStr := c.Param("id")
-	repoID, err := uuid.Parse(repoIDStr)
+	repoID, err := utils.ParseUUIDParam(c, "id")
 	if err != nil {
-		BadRequestResponse(c, "Invalid repository ID")
+		utils.ErrorResponse(c, err)
 		return
 	}
 
 	var req UpdateRepositoryRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		ValidationErrorResponse(c, "Invalid repository data", map[string]interface{}{
-			"validation_errors": err.Error(),
-		})
+	if err := utils.ValidateAndBindJSON(c, &req); err != nil {
+		utils.ErrorResponse(c, err)
 		return
 	}
 
-	// Get current user for authorization
-	_, exists := GetCurrentUserID(c)
-	if !exists {
-		UnauthorizedResponse(c, "User authentication required")
+	// Get authenticated user from middleware
+	_, _, _, err = middleware.GetUserFromContext(c)
+	if err != nil {
+		utils.UnauthorizedResponse(c, "User authentication required")
 		return
 	}
 
 	// Get existing repository
 	repo, err := h.repos.Repositories.GetByID(c.Request.Context(), repoID)
 	if err != nil {
-		ErrorResponseFromError(c, err)
+		utils.ErrorResponse(c, err)
 		return
 	}
 
@@ -290,7 +281,7 @@ func (h *RepositoryHandler) UpdateRepository(c *gin.Context) {
 	}
 
 	if err := h.repos.Repositories.Update(c.Request.Context(), repo); err != nil {
-		ErrorResponseFromError(c, err)
+		utils.ErrorResponse(c, err)
 		return
 	}
 
@@ -310,75 +301,65 @@ func (h *RepositoryHandler) UpdateRepository(c *gin.Context) {
 		repoData["last_scan_at"] = repo.LastScanAt.Format(time.RFC3339)
 	}
 
-	SuccessResponse(c, repoData)
+	utils.SuccessResponse(c, repoData)
 }
 
 // DeleteRepository soft deletes a repository
 func (h *RepositoryHandler) DeleteRepository(c *gin.Context) {
-	repoIDStr := c.Param("id")
-	repoID, err := uuid.Parse(repoIDStr)
+	repoID, err := utils.ParseUUIDParam(c, "id")
 	if err != nil {
-		BadRequestResponse(c, "Invalid repository ID")
+		utils.ErrorResponse(c, err)
 		return
 	}
 
-	// Get current user for authorization
-	_, exists := GetCurrentUserID(c)
-	if !exists {
-		UnauthorizedResponse(c, "User authentication required")
+	// Get authenticated user from middleware
+	_, _, _, err = middleware.GetUserFromContext(c)
+	if err != nil {
+		utils.UnauthorizedResponse(c, "User authentication required")
 		return
 	}
 
 	// Check if repository exists
 	_, err = h.repos.Repositories.GetByID(c.Request.Context(), repoID)
 	if err != nil {
-		ErrorResponseFromError(c, err)
+		utils.ErrorResponse(c, err)
 		return
 	}
 
 	// Soft delete the repository
 	if err := h.repos.Repositories.Delete(c.Request.Context(), repoID); err != nil {
-		ErrorResponseFromError(c, err)
+		utils.ErrorResponse(c, err)
 		return
 	}
 
-	SuccessResponse(c, map[string]string{
+	utils.SuccessResponse(c, map[string]string{
 		"message": "Repository deleted successfully",
 	})
 }
 
 // GetRepositoryScans retrieves scans for a specific repository
 func (h *RepositoryHandler) GetRepositoryScans(c *gin.Context) {
-	repoIDStr := c.Param("id")
-	repoID, err := uuid.Parse(repoIDStr)
+	repoID, err := utils.ParseUUIDParam(c, "id")
 	if err != nil {
-		BadRequestResponse(c, "Invalid repository ID")
+		utils.ErrorResponse(c, err)
 		return
 	}
 
-	// Parse pagination parameters
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	status := c.Query("status")
+	// Parse pagination parameters using standardized utility
+	pagination := utils.ParsePaginationFromQuery(c, 20, 100)
+	status := utils.ParseStringQuery(c, "status", 50)
 
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 || pageSize > 100 {
-		pageSize = 20
-	}
-
-	// Get current user for authorization
-	_, exists := GetCurrentUserID(c)
-	if !exists {
-		UnauthorizedResponse(c, "User authentication required")
+	// Get authenticated user from middleware
+	_, _, _, err = middleware.GetUserFromContext(c)
+	if err != nil {
+		utils.UnauthorizedResponse(c, "User authentication required")
 		return
 	}
 
 	// Check if repository exists
 	_, err = h.repos.Repositories.GetByID(c.Request.Context(), repoID)
 	if err != nil {
-		ErrorResponseFromError(c, err)
+		utils.ErrorResponse(c, err)
 		return
 	}
 
@@ -391,14 +372,14 @@ func (h *RepositoryHandler) GetRepositoryScans(c *gin.Context) {
 		filter.Status = status
 	}
 
-	pagination := &database.Pagination{
-		Page:     page,
-		PageSize: pageSize,
+	dbPagination := &database.Pagination{
+		Page:     pagination.Page,
+		PageSize: pagination.PageSize,
 	}
 
-	scanJobs, total, err := h.repos.ScanJobs.List(c.Request.Context(), filter, pagination)
+	scanJobs, total, err := h.repos.ScanJobs.List(c.Request.Context(), filter, dbPagination)
 	if err != nil {
-		ErrorResponseFromError(c, err)
+		utils.ErrorResponse(c, err)
 		return
 	}
 
@@ -468,7 +449,7 @@ func (h *RepositoryHandler) GetRepositoryScans(c *gin.Context) {
 		"scans": scans,
 	}
 
-	PaginatedResponse(c, responseData, page, pageSize, total)
+	utils.PaginatedResponse(c, responseData, pagination.Page, pagination.PageSize, total)
 }
 
 // parseRepositoryURL extracts provider and provider ID from repository URL

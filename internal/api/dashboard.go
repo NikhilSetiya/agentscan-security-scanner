@@ -1,33 +1,38 @@
 package api
 
 import (
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 
 	"github.com/NikhilSetiya/agentscan-security-scanner/internal/database"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/shared/utils"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/adapters/http/middleware"
+	"github.com/NikhilSetiya/agentscan-security-scanner/internal/adapters/http/handlers"
 )
 
 // DashboardHandler handles dashboard-related endpoints
 type DashboardHandler struct {
+	*handlers.BaseHandler
 	repos *database.Repositories
 }
 
 // NewDashboardHandler creates a new dashboard handler
-func NewDashboardHandler(repos *database.Repositories) *DashboardHandler {
+func NewDashboardHandler(repos *database.Repositories, logger *zap.Logger) *DashboardHandler {
 	return &DashboardHandler{
-		repos: repos,
+		BaseHandler: handlers.NewBaseHandler(logger),
+		repos:       repos,
 	}
 }
 
 // GetStats retrieves dashboard statistics
 func (h *DashboardHandler) GetStats(c *gin.Context) {
-	// Get current user for organization context
-	_, exists := GetCurrentUserID(c)
-	if !exists {
-		UnauthorizedResponse(c, "User authentication required")
+	// Get authenticated user from middleware
+	_, _, _, err := middleware.GetUserFromContext(c)
+	if err != nil {
+		utils.UnauthorizedResponse(c, "User authentication required")
 		return
 	}
 
@@ -38,21 +43,21 @@ func (h *DashboardHandler) GetStats(c *gin.Context) {
 	// Get basic stats
 	stats, err := h.repos.Dashboard.GetStats(c.Request.Context(), orgID)
 	if err != nil {
-		ErrorResponseFromError(c, err)
+		utils.ErrorResponse(c, err)
 		return
 	}
 
 	// Get recent scans
 	recentScans, err := h.repos.Dashboard.GetRecentScans(c.Request.Context(), orgID, 10)
 	if err != nil {
-		ErrorResponseFromError(c, err)
+		utils.ErrorResponse(c, err)
 		return
 	}
 
 	// Get trend data (last 7 days)
 	trendData, err := h.getTrendData(c, orgID, 7)
 	if err != nil {
-		ErrorResponseFromError(c, err)
+		utils.ErrorResponse(c, err)
 		return
 	}
 
@@ -65,7 +70,7 @@ func (h *DashboardHandler) GetStats(c *gin.Context) {
 		"trend_data":          trendData,
 	}
 
-	SuccessResponse(c, dashboardData)
+	utils.SuccessResponse(c, dashboardData)
 }
 
 // getTrendData retrieves trend data for the last N days
@@ -94,24 +99,23 @@ func (h *DashboardHandler) getTrendData(c *gin.Context, orgID *uuid.UUID, days i
 
 // GetRepositoryStats retrieves statistics for a specific repository
 func (h *DashboardHandler) GetRepositoryStats(c *gin.Context) {
-	repoIDStr := c.Param("id")
-	repoID, err := uuid.Parse(repoIDStr)
+	repoID, err := utils.ParseUUIDParam(c, "id")
 	if err != nil {
-		BadRequestResponse(c, "Invalid repository ID")
+		utils.ErrorResponse(c, err)
 		return
 	}
 
-	// Get current user for authorization
-	_, exists := GetCurrentUserID(c)
-	if !exists {
-		UnauthorizedResponse(c, "User authentication required")
+	// Get authenticated user from middleware
+	_, _, _, err = middleware.GetUserFromContext(c)
+	if err != nil {
+		utils.UnauthorizedResponse(c, "User authentication required")
 		return
 	}
 
 	// Get repository to ensure it exists
 	repo, err := h.repos.Repositories.GetByID(c.Request.Context(), repoID)
 	if err != nil {
-		ErrorResponseFromError(c, err)
+		utils.ErrorResponse(c, err)
 		return
 	}
 
@@ -126,7 +130,7 @@ func (h *DashboardHandler) GetRepositoryStats(c *gin.Context) {
 
 	scanJobs, total, err := h.repos.ScanJobs.List(c.Request.Context(), filter, pagination)
 	if err != nil {
-		ErrorResponseFromError(c, err)
+		utils.ErrorResponse(c, err)
 		return
 	}
 
@@ -180,22 +184,21 @@ func (h *DashboardHandler) GetRepositoryStats(c *gin.Context) {
 		"recent_scans":       len(scanJobs),
 	}
 
-	SuccessResponse(c, stats)
+	utils.SuccessResponse(c, stats)
 }
 
 // GetScanTrends retrieves scan trends over time
 func (h *DashboardHandler) GetScanTrends(c *gin.Context) {
-	// Get query parameters
-	daysStr := c.DefaultQuery("days", "30")
-	days, err := strconv.Atoi(daysStr)
-	if err != nil || days < 1 || days > 365 {
+	// Get query parameters using standardized utility
+	days := utils.ParseOptionalIntQuery(c, "days", 30)
+	if days < 1 || days > 365 {
 		days = 30
 	}
 
-	// Get current user for organization context
-	_, exists := GetCurrentUserID(c)
-	if !exists {
-		UnauthorizedResponse(c, "User authentication required")
+	// Get authenticated user from middleware
+	_, _, _, err := middleware.GetUserFromContext(c)
+	if err != nil {
+		utils.UnauthorizedResponse(c, "User authentication required")
 		return
 	}
 
@@ -204,11 +207,11 @@ func (h *DashboardHandler) GetScanTrends(c *gin.Context) {
 	var orgID *uuid.UUID = nil
 	trendData, err := h.getTrendData(c, orgID, days)
 	if err != nil {
-		ErrorResponseFromError(c, err)
+		utils.ErrorResponse(c, err)
 		return
 	}
 
-	SuccessResponse(c, map[string]interface{}{
+	utils.SuccessResponse(c, map[string]interface{}{
 		"trends": trendData,
 		"period": map[string]interface{}{
 			"days":      days,
@@ -220,10 +223,10 @@ func (h *DashboardHandler) GetScanTrends(c *gin.Context) {
 
 // GetSystemHealth retrieves system health metrics
 func (h *DashboardHandler) GetSystemHealth(c *gin.Context) {
-	// Get current user for authorization
-	_, exists := GetCurrentUserID(c)
-	if !exists {
-		UnauthorizedResponse(c, "User authentication required")
+	// Get authenticated user from middleware
+	_, _, _, err := middleware.GetUserFromContext(c)
+	if err != nil {
+		utils.UnauthorizedResponse(c, "User authentication required")
 		return
 	}
 
@@ -268,5 +271,5 @@ func (h *DashboardHandler) GetSystemHealth(c *gin.Context) {
 		health["status"] = "degraded"
 	}
 
-	SuccessResponse(c, health)
+	utils.SuccessResponse(c, health)
 }
