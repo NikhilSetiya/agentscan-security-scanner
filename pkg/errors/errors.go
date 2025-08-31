@@ -240,8 +240,8 @@ func IsTimeout(err error) bool {
 func IsRateLimit(err error) bool {
 	return IsType(err, ErrorTypeRateLimit)
 }
-/
-/ Error wrapping and unwrapping utilities
+
+// Error wrapping and unwrapping utilities
 
 // WrapError wraps an existing error with additional context
 func WrapError(err error, message string) *AppError {

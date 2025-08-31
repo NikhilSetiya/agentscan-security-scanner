@@ -265,3 +265,28 @@ func (r *RedisClient) TTL(ctx context.Context, key string) (time.Duration, error
 	}
 	return ttl, nil
 }
+
+// ZRemRangeByScore removes elements from a sorted set by score range
+func (r *RedisClient) ZRemRangeByScore(ctx context.Context, key, min, max string) error {
+	if err := r.client.ZRemRangeByScore(ctx, key, min, max).Err(); err != nil {
+		return errors.NewInternalError("failed to remove from Redis sorted set by score").WithCause(err)
+	}
+	return nil
+}
+
+// Incr increments a key's value
+func (r *RedisClient) Incr(ctx context.Context, key string) (int64, error) {
+	val, err := r.client.Incr(ctx, key).Result()
+	if err != nil {
+		return 0, errors.NewInternalError("failed to increment Redis key").WithCause(err)
+	}
+	return val, nil
+}
+
+// ExpireAt sets an absolute expiration time on a key
+func (r *RedisClient) ExpireAt(ctx context.Context, key string, tm time.Time) error {
+	if err := r.client.ExpireAt(ctx, key, tm).Err(); err != nil {
+		return errors.NewInternalError("failed to set Redis key expiration time").WithCause(err)
+	}
+	return nil
+}

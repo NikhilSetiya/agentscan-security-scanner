@@ -1,87 +1,39 @@
-import React from 'react';
-import { clsx } from 'clsx';
-import './Button.css';
+import React from 'react'
+import { clsx } from 'clsx'
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
-  size?: 'sm' | 'md' | 'lg';
-  loading?: boolean;
-  children: React.ReactNode;
-  loadingText?: string;
-  icon?: React.ReactNode;
-  iconPosition?: 'left' | 'right';
+  variant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link'
+  size?: 'default' | 'sm' | 'lg' | 'icon'
 }
 
-export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ 
-    className, 
-    variant = 'primary', 
-    size = 'md', 
-    loading = false, 
-    disabled, 
-    children, 
-    loadingText,
-    icon,
-    iconPosition = 'left',
-    'aria-label': ariaLabel,
-    ...props 
-  }, ref) => {
-    const isDisabled = disabled || loading;
-    
+const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ className, variant = 'default', size = 'default', ...props }, ref) => {
     return (
       <button
         className={clsx(
-          'btn',
-          `btn-${variant}`,
-          `btn-${size}`,
+          'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
           {
-            'btn-loading': loading,
-            'btn-disabled': isDisabled,
-            'btn-icon-only': !children && icon,
+            'bg-blue-600 text-white hover:bg-blue-700': variant === 'default',
+            'bg-red-600 text-white hover:bg-red-700': variant === 'destructive',
+            'border border-gray-300 bg-white hover:bg-gray-50 hover:text-gray-900': variant === 'outline',
+            'bg-gray-100 text-gray-900 hover:bg-gray-200': variant === 'secondary',
+            'hover:bg-gray-100 hover:text-gray-900': variant === 'ghost',
+            'text-blue-600 underline-offset-4 hover:underline': variant === 'link',
+          },
+          {
+            'h-10 px-4 py-2': size === 'default',
+            'h-9 rounded-md px-3': size === 'sm',
+            'h-11 rounded-md px-8': size === 'lg',
+            'h-10 w-10': size === 'icon',
           },
           className
         )}
-        disabled={isDisabled}
-        aria-label={loading ? loadingText || 'Loading...' : ariaLabel}
-        aria-busy={loading}
         ref={ref}
         {...props}
-      >
-        {loading && (
-          <svg className="btn-spinner" viewBox="0 0 24 24" aria-hidden="true">
-            <circle
-              className="btn-spinner-circle"
-              cx="12"
-              cy="12"
-              r="10"
-              fill="none"
-              strokeWidth="2"
-            />
-          </svg>
-        )}
-        
-        {!loading && icon && iconPosition === 'left' && (
-          <span className="btn-icon btn-icon-left" aria-hidden="true">
-            {icon}
-          </span>
-        )}
-        
-        {!loading && children && (
-          <span className="btn-text">{children}</span>
-        )}
-        
-        {loading && loadingText && (
-          <span className="btn-text">{loadingText}</span>
-        )}
-        
-        {!loading && icon && iconPosition === 'right' && (
-          <span className="btn-icon btn-icon-right" aria-hidden="true">
-            {icon}
-          </span>
-        )}
-      </button>
-    );
+      />
+    )
   }
-);
+)
+Button.displayName = 'Button'
 
-Button.displayName = 'Button';
+export { Button }

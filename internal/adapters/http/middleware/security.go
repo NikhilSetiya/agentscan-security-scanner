@@ -124,11 +124,27 @@ func (sm *SecurityMiddleware) CORS() gin.HandlerFunc {
 	}
 }
 
-// RateLimit implements rate limiting with Redis backend
+// RateLimit implements enhanced rate limiting with comprehensive features
 func (sm *SecurityMiddleware) RateLimit(limitType string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Get client identifier (IP + User ID if available)
 		clientID := sm.getClientID(c)
+		clientIP := c.ClientIP()
+		
+		// Check IP whitelist/blacklist first
+		if sm.isIPBlacklisted(clientIP) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "IP address is blacklisted",
+				"code":  "IP_BLACKLISTED",
+			})
+			c.Abort()
+			return
+		}
+		
+		if sm.isIPWhitelisted(clientIP) {
+			c.Next()
+			return
+		}
 		
 		// Get rate limit configuration
 		sm.mu.RLock()
@@ -138,28 +154,40 @@ func (sm *SecurityMiddleware) RateLimit(limitType string) gin.HandlerFunc {
 		}
 		sm.mu.RUnlock()
 		
-		// Check rate limit
-		allowed, remaining, resetTime, err := sm.checkRateLimit(c.Request.Context(), clientID, limitType, limit)
-		if err != nil {
-			// Log error but don't block request
-			c.Next()
-			return
-		}
+		// Check multiple rate limits (IP, User, Endpoint, Global)
+		rateLimitKeys := sm.getRateLimitKeys(c, clientID, limitType)
 		
-		// Add rate limit headers
-		c.Header("X-RateLimit-Limit", strconv.Itoa(limit.Requests))
-		c.Header("X-RateLimit-Remaining", strconv.Itoa(remaining))
-		c.Header("X-RateLimit-Reset", strconv.FormatInt(resetTime, 10))
-		
-		if !allowed {
-			c.Error(errors.NewRateLimitError("rate limit exceeded").WithDetails(map[string]interface{}{
-				"limit_type": limitType,
-				"limit":      limit.Requests,
-				"window":     limit.Window.String(),
-				"reset_time": resetTime,
-			}))
-			c.Abort()
-			return
+		for keyType, key := range rateLimitKeys {
+			allowed, remaining, resetTime, err := sm.checkRateLimit(c.Request.Context(), key, limitType, limit)
+			if err != nil {
+				// Log error but don't block request
+				continue
+			}
+			
+			// Add rate limit headers for each type
+			headerPrefix := fmt.Sprintf("X-RateLimit-%s", strings.Title(keyType))
+			c.Header(fmt.Sprintf("%s-Limit", headerPrefix), strconv.Itoa(limit.Requests))
+			c.Header(fmt.Sprintf("%s-Remaining", headerPrefix), strconv.Itoa(remaining))
+			c.Header(fmt.Sprintf("%s-Reset", headerPrefix), strconv.FormatInt(resetTime, 10))
+			
+			if !allowed {
+				retryAfter := resetTime - time.Now().Unix()
+				if retryAfter > 0 {
+					c.Header("Retry-After", strconv.FormatInt(retryAfter, 10))
+				}
+				
+				c.JSON(http.StatusTooManyRequests, gin.H{
+					"error":      "Rate limit exceeded",
+					"message":    fmt.Sprintf("%s rate limit exceeded", keyType),
+					"limit_type": keyType,
+					"limit":      limit.Requests,
+					"remaining":  remaining,
+					"reset_time": resetTime,
+					"retry_after": retryAfter,
+				})
+				c.Abort()
+				return
+			}
 		}
 		
 		c.Next()
@@ -294,6 +322,75 @@ func (sm *SecurityMiddleware) sanitizeQueryParams(c *gin.Context) {
 	}
 	
 	c.Request.URL.RawQuery = query.Encode()
+}
+
+// getRateLimitKeys returns multiple rate limit keys to check
+func (sm *SecurityMiddleware) getRateLimitKeys(c *gin.Context, clientID, limitType string) map[string]string {
+	keys := make(map[string]string)
+	
+	// IP-based rate limiting
+	keys["ip"] = fmt.Sprintf("rate_limit:ip:%s:%s", limitType, c.ClientIP())
+	
+	// User-based rate limiting (if authenticated)
+	if userID, exists := c.Get("user_id"); exists {
+		keys["user"] = fmt.Sprintf("rate_limit:user:%s:%v", limitType, userID)
+	}
+	
+	// Endpoint-specific rate limiting
+	endpoint := fmt.Sprintf("%s %s", c.Request.Method, c.FullPath())
+	keys["endpoint"] = fmt.Sprintf("rate_limit:endpoint:%s:%s", endpoint, c.ClientIP())
+	
+	// Global rate limiting
+	keys["global"] = fmt.Sprintf("rate_limit:global:%s", limitType)
+	
+	return keys
+}
+
+// isIPWhitelisted checks if an IP is in the whitelist
+func (sm *SecurityMiddleware) isIPWhitelisted(ip string) bool {
+	// Default whitelist for localhost and common development IPs
+	whitelist := []string{
+		"127.0.0.1",
+		"::1",
+		"localhost",
+	}
+	
+	for _, whitelistedIP := range whitelist {
+		if ip == whitelistedIP {
+			return true
+		}
+	}
+	return false
+}
+
+// isIPBlacklisted checks if an IP is in the blacklist
+func (sm *SecurityMiddleware) isIPBlacklisted(ip string) bool {
+	// This would typically be loaded from configuration or database
+	// For now, return false (no IPs blacklisted by default)
+	return false
+}
+
+// UpdateRateLimit allows dynamic rate limit configuration
+func (sm *SecurityMiddleware) UpdateRateLimit(limitType string, limit RateLimit) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.rateLimits[limitType] = limit
+}
+
+// GetRateLimit returns the current rate limit configuration
+func (sm *SecurityMiddleware) GetRateLimit(limitType string) (RateLimit, bool) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	limit, exists := sm.rateLimits[limitType]
+	return limit, exists
+}
+
+// ResetRateLimit resets rate limiting for a specific key
+func (sm *SecurityMiddleware) ResetRateLimit(ctx context.Context, key string) error {
+	if sm.redisClient == nil {
+		return nil
+	}
+	return sm.redisClient.Del(ctx, key).Err()
 }
 
 // Helper functions for logging

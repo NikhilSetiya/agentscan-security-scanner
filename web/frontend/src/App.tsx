@@ -7,9 +7,13 @@ import { GlobalShortcutsHelp } from './components/ui/KeyboardShortcutsHelp';
 import { useGlobalShortcuts } from './hooks/useKeyboardShortcuts';
 import { PageTransition } from './components/ui/Transitions';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { AuthProvider, ProtectedRoute, useAuth } from './contexts/AuthContext';
-import { LoginForm } from './components/auth/LoginForm';
-import { OAuthCallback } from './components/auth/OAuthCallback';
+import { AuthProvider, useAuthContext } from './contexts/AuthContext';
+import { ProtectedRoute } from './components/ProtectedRoute';
+import { LoginPage } from './pages/auth/LoginPage';
+import { SignupPage } from './pages/auth/SignupPage';
+import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
+import { ResetPasswordPage } from './pages/auth/ResetPasswordPage';
+import { AuthCallbackPage } from './pages/auth/AuthCallbackPage';
 import { ApiDebugPanel } from './components/debug/ApiDebugPanel';
 import { observeLogger } from './services/observeLogger';
 import './styles/globals.css';
@@ -24,6 +28,7 @@ const Security = lazy(() => import('./pages/Security').then(module => ({ default
 const Activity = lazy(() => import('./pages/Activity').then(module => ({ default: module.Activity })));
 const Settings = lazy(() => import('./pages/Settings').then(module => ({ default: module.Settings })));
 
+
 // Loading fallback component
 const PageLoader = () => (
   <div className="flex items-center justify-center min-h-96">
@@ -32,7 +37,7 @@ const PageLoader = () => (
 );
 
 function AppContent() {
-  const { state } = useAuth();
+  const { user, isLoading, isAuthenticated } = useAuthContext();
   const { shortcuts } = useGlobalShortcuts();
   const {
     isOnboardingOpen,
@@ -57,88 +62,67 @@ function AppContent() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Show login form if not authenticated
-  if (!state.isAuthenticated && !state.isLoading) {
-    return <LoginForm />;
-  }
-
   // Show loading while checking authentication
-  if (state.isLoading) {
+  if (isLoading) {
     return (
-      <div className="loading-container">
-        <div className="loading-spinner">Loading AgentScan...</div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900"></div>
       </div>
     );
   }
 
   return (
     <Router>
-      <Layout>
-        <PageTransition>
-          <Suspense fallback={<PageLoader />}>
-            <Routes>
-              {/* OAuth callback route (no authentication required) */}
-              <Route path="/auth/callback" element={<OAuthCallback />} />
-              
-              <Route path="/" element={
-                <ProtectedRoute>
-                  <Dashboard />
-                </ProtectedRoute>
-              } />
-              <Route path="/scans" element={
-                <ProtectedRoute>
-                  <Scans />
-                </ProtectedRoute>
-              } />
-              <Route path="/scans/:id" element={
-                <ProtectedRoute>
-                  <ScanResults />
-                </ProtectedRoute>
-              } />
-              <Route path="/findings" element={
-                <ProtectedRoute>
-                  <Findings />
-                </ProtectedRoute>
-              } />
-              <Route path="/reports" element={
-                <ProtectedRoute>
-                  <Reports />
-                </ProtectedRoute>
-              } />
-              <Route path="/security" element={
-                <ProtectedRoute>
-                  <Security />
-                </ProtectedRoute>
-              } />
-              <Route path="/activity" element={
-                <ProtectedRoute>
-                  <Activity />
-                </ProtectedRoute>
-              } />
-              <Route path="/settings" element={
-                <ProtectedRoute>
-                  <Settings />
-                </ProtectedRoute>
-              } />
-            </Routes>
-          </Suspense>
-        </PageTransition>
-      </Layout>
+      <Routes>
+        {/* Public routes */}
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/auth/callback" element={<AuthCallbackPage />} />
+        
+        {/* Protected routes */}
+        <Route path="/*" element={
+          <ProtectedRoute>
+            <Layout>
+              <PageTransition>
+                <Suspense fallback={<PageLoader />}>
+                  <Routes>
+                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/dashboard" element={<Dashboard />} />
+                    <Route path="/scans" element={<Scans />} />
+                    <Route path="/scans/:id" element={<ScanResults />} />
+                    <Route path="/findings" element={<Findings />} />
+                    <Route path="/reports" element={<Reports />} />
+                    <Route path="/security" element={<Security />} />
+                    <Route path="/activity" element={<Activity />} />
+                    <Route path="/settings" element={<Settings />} />
+                  </Routes>
+                </Suspense>
+              </PageTransition>
+            </Layout>
+          </ProtectedRoute>
+        } />
+      </Routes>
       
-      {/* Global components */}
-      <OnboardingFlow
-        isOpen={isOnboardingOpen}
-        onClose={closeOnboarding}
-        onComplete={completeOnboarding}
-      />
-      
-      <GlobalShortcutsHelp shortcuts={shortcuts} />
-      
-      {/* Debug Panel */}
-      <ApiDebugPanel 
-        isOpen={isDebugPanelOpen} 
-        onClose={() => setIsDebugPanelOpen(false)} 
-      />
+      {/* Global components - only show when authenticated */}
+      {isAuthenticated && (
+        <>
+          <OnboardingFlow
+            isOpen={isOnboardingOpen}
+            onClose={closeOnboarding}
+            onComplete={completeOnboarding}
+          />
+          
+          <GlobalShortcutsHelp shortcuts={shortcuts} />
+          
+          {/* Debug Panel */}
+          <ApiDebugPanel 
+            isOpen={isDebugPanelOpen} 
+            onClose={() => setIsDebugPanelOpen(false)} 
+          />
+        </>
+      )}
     </Router>
   );
 }
