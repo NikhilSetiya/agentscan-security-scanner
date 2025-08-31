@@ -43,17 +43,18 @@ export interface Pagination {
   has_prev: boolean;
 }
 
-// Backend response wrapper format
+// Backend response wrapper format - Updated to match new clean architecture
 interface BackendResponse<T> {
   success: boolean;
   data?: T;
-  error?: ApiError;
+  error?: string;
+  message?: string;
+  details?: Record<string, any>;
   meta?: {
     pagination?: Pagination;
-    timestamp: string;
+    timestamp?: string;
   };
   request_id?: string;
-  timestamp: string;
 }
 
 // Authentication Types
@@ -184,17 +185,88 @@ export interface DashboardStats {
   }>;
 }
 
+// Request/Response Interceptor Types
+export interface RequestInterceptor {
+  (config: RequestConfig): RequestConfig | Promise<RequestConfig>;
+}
+
+export interface ResponseInterceptor {
+  (response: ApiResponse<any>): ApiResponse<any> | Promise<ApiResponse<any>>;
+}
+
+export interface RequestConfig {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  body?: any;
+  timeout?: number;
+}
+
 // HTTP Client Class
 class ApiClient {
   private baseURL: string;
   private timeout: number;
   private authToken: string | null = null;
+  private requestInterceptors: RequestInterceptor[] = [];
+  private responseInterceptors: ResponseInterceptor[] = [];
 
   constructor(baseURL: string, timeout: number = API_TIMEOUT) {
     this.baseURL = baseURL;
     this.timeout = timeout;
     // Initialize auth token asynchronously
     this.loadAuthToken().catch(console.error);
+    
+    // Add default interceptors
+    this.addDefaultInterceptors();
+  }
+
+  private addDefaultInterceptors(): void {
+    // Request interceptor for logging
+    this.addRequestInterceptor((config) => {
+      console.log(`[API] ${config.method} ${config.url}`, {
+        headers: config.headers,
+        body: config.body
+      });
+      return config;
+    });
+
+    // Response interceptor for logging
+    this.addResponseInterceptor((response) => {
+      if (response.error) {
+        console.error(`[API] Response error:`, response.error);
+      } else {
+        console.log(`[API] Response success:`, {
+          status: response.status,
+          data: response.data
+        });
+      }
+      return response;
+    });
+  }
+
+  // Interceptor management
+  addRequestInterceptor(interceptor: RequestInterceptor): void {
+    this.requestInterceptors.push(interceptor);
+  }
+
+  addResponseInterceptor(interceptor: ResponseInterceptor): void {
+    this.responseInterceptors.push(interceptor);
+  }
+
+  private async applyRequestInterceptors(config: RequestConfig): Promise<RequestConfig> {
+    let processedConfig = config;
+    for (const interceptor of this.requestInterceptors) {
+      processedConfig = await interceptor(processedConfig);
+    }
+    return processedConfig;
+  }
+
+  private async applyResponseInterceptors<T>(response: ApiResponse<T>): Promise<ApiResponse<T>> {
+    let processedResponse = response;
+    for (const interceptor of this.responseInterceptors) {
+      processedResponse = await interceptor(processedResponse);
+    }
+    return processedResponse;
   }
 
   private async loadAuthToken(): Promise<void> {
@@ -252,13 +324,31 @@ class ApiClient {
     // Create trace for this API call
     const traceId = observeLogger.createTrace(`API ${options.method || 'GET'} ${endpoint}`);
 
+    // Prepare request config
+    let requestConfig: RequestConfig = {
+      url: endpoint,
+      method: options.method || 'GET',
+      headers: {
+        ...this.getHeaders(),
+        ...options.headers,
+      },
+      body: options.body,
+      timeout: this.timeout
+    };
+
+    // Apply request interceptors
+    try {
+      requestConfig = await this.applyRequestInterceptors(requestConfig);
+    } catch (error) {
+      console.error('[API] Request interceptor error:', error);
+    }
+
     try {
       const response = await fetch(url, {
         ...options,
-        headers: {
-          ...this.getHeaders(),
-          ...options.headers,
-        },
+        method: requestConfig.method,
+        headers: requestConfig.headers,
+        body: requestConfig.body,
         signal: controller.signal,
       });
 
@@ -310,10 +400,11 @@ class ApiClient {
           console.log(`[API] Request failed with status ${response.status}:`, url);
         }
 
-        // Extract error from standardized backend response
-        const apiError: ApiError = backendResponse.error || {
+        // Extract error from new backend response format
+        const apiError: ApiError = {
           code: `HTTP_${response.status}`,
-          message: `Request failed with status ${response.status}`,
+          message: backendResponse.error || backendResponse.message || `Request failed with status ${response.status}`,
+          details: backendResponse.details
         };
 
         return {
@@ -325,8 +416,8 @@ class ApiClient {
         };
       }
 
-      // Handle successful response
-      if (backendResponse.success === false && backendResponse.error) {
+      // Handle successful response with success: false
+      if (backendResponse.success === false) {
         // Backend returned success: false with error details
         observeLogger.logApiCall(
           {
@@ -338,20 +429,26 @@ class ApiClient {
           {
             status: response.status,
             body: data,
-            error: backendResponse.error.message
+            error: backendResponse.error || backendResponse.message
           },
           duration
         );
 
         observeLogger.endTrace(traceId, false, {
           status: response.status,
-          error: backendResponse.error.message,
+          error: backendResponse.error || backendResponse.message,
           request_id: backendResponse.request_id
         });
 
+        const apiError: ApiError = {
+          code: 'BACKEND_ERROR',
+          message: backendResponse.error || backendResponse.message || 'Backend returned error',
+          details: backendResponse.details
+        };
+
         return {
           data: undefined,
-          error: backendResponse.error,
+          error: apiError,
           status: response.status,
           meta: backendResponse.meta,
           request_id: backendResponse.request_id,
@@ -380,14 +477,23 @@ class ApiClient {
         request_id: backendResponse.request_id
       });
 
-      // Return the data from the standardized backend response with meta information
-      return {
+      // Create successful response
+      let apiResponse: ApiResponse<T> = {
         data: backendResponse.data as T,
         error: undefined,
         status: response.status,
         meta: backendResponse.meta,
         request_id: backendResponse.request_id,
       };
+
+      // Apply response interceptors
+      try {
+        apiResponse = await this.applyResponseInterceptors(apiResponse);
+      } catch (error) {
+        console.error('[API] Response interceptor error:', error);
+      }
+
+      return apiResponse;
     } catch (error) {
       clearTimeout(timeoutId);
       const duration = Date.now() - startTime;
@@ -434,21 +540,34 @@ class ApiClient {
   // Enhanced request method with retry mechanism
   private async enhancedRequest<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    retryConfig?: {
+      maxAttempts?: number;
+      baseDelay?: number;
+      maxDelay?: number;
+      retryCondition?: (error: ApiResponse<any>) => boolean;
+    }
   ): Promise<ApiResponse<T>> {
+    const defaultRetryConfig = {
+      maxAttempts: 3,
+      baseDelay: 1000,
+      maxDelay: 10000,
+      retryCondition: (error: ApiResponse<any>) => {
+        // Don't retry authentication errors or client errors (4xx)
+        if (error?.status >= 400 && error?.status < 500) return false;
+        // Don't retry if it's a validation error
+        if (error?.error?.code === 'VALIDATION_ERROR') return false;
+        // Retry network errors, timeouts, and server errors (5xx)
+        return error?.status === 0 || error?.status >= 500 || error?.error?.code === 'TIMEOUT';
+      }
+    };
+
+    const config = { ...defaultRetryConfig, ...retryConfig };
+
     return enhancedApiCall(
       () => this.request<T>(endpoint, options),
-      {
-        maxAttempts: 3,
-        baseDelay: 1000,
-        retryCondition: (error) => {
-          // Don't retry authentication errors or client errors
-          if (error?.status >= 400 && error?.status < 500) return false
-          // Retry network errors and server errors
-          return true
-        }
-      }
-    )
+      config
+    );
   }
 
   // Authentication Methods
@@ -456,10 +575,14 @@ class ApiClient {
     const response = await this.enhancedRequest<LoginResponse>('/auth/login', {
       method: 'POST',
       body: JSON.stringify(credentials),
+    }, {
+      maxAttempts: 2, // Don't retry login too many times
+      retryCondition: (error) => error?.status >= 500 // Only retry server errors
     });
 
     if (response.data?.token) {
       this.saveAuthToken(response.data.token);
+      this.setConnectionState('connected');
     }
 
     return response;
@@ -475,56 +598,133 @@ class ApiClient {
   }
 
   async getCurrentUser(): Promise<ApiResponse<User>> {
-    return this.request<User>('/user/me');
+    return this.enhancedRequest<User>('/user/me');
   }
 
   // Repository Methods
-  async getRepositories(params: PaginationParams & { search?: string } = {}): Promise<ApiResponse<RepositoryListResponse>> {
+  async getRepositories(params: PaginationParams & { search?: string; organization_id?: string } = {}): Promise<ApiResponse<RepositoryListResponse>> {
     const searchParams = new URLSearchParams();
     if (params.page) searchParams.set('page', params.page.toString());
-    if (params.limit) searchParams.set('limit', params.limit.toString());
+    if (params.limit) searchParams.set('page_size', params.limit.toString()); // Updated to match backend
     if (params.search) searchParams.set('search', params.search);
+    if (params.organization_id) searchParams.set('organization_id', params.organization_id);
 
     const query = searchParams.toString();
     const endpoint = query ? `/repositories?${query}` : '/repositories';
 
-    return this.request<RepositoryListResponse>(endpoint);
+    return this.enhancedRequest<RepositoryListResponse>(endpoint);
+  }
+
+  async getRepository(id: string): Promise<ApiResponse<Repository>> {
+    return this.enhancedRequest<Repository>(`/repositories/${id}`);
   }
 
   async createRepository(repository: CreateRepositoryRequest): Promise<ApiResponse<Repository>> {
-    return this.request<Repository>('/repositories', {
+    return this.enhancedRequest<Repository>('/repositories', {
       method: 'POST',
       body: JSON.stringify(repository),
+    }, {
+      maxAttempts: 2, // Don't retry creation too many times
+      retryCondition: (error) => error?.status >= 500
     });
   }
 
-  // Scan Methods
-  async getScans(params: PaginationParams & { repository_id?: string; status?: string } = {}): Promise<ApiResponse<ScanListResponse>> {
+  async updateRepository(id: string, updates: Partial<CreateRepositoryRequest>): Promise<ApiResponse<Repository>> {
+    return this.enhancedRequest<Repository>(`/repositories/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async deleteRepository(id: string): Promise<ApiResponse<{ message: string }>> {
+    return this.enhancedRequest<{ message: string }>(`/repositories/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Scan Job Methods (Updated to match new backend endpoints)
+  async getScanJobs(params: PaginationParams & { repository_id?: string; status?: string; user_id?: string } = {}): Promise<ApiResponse<ScanListResponse>> {
     const searchParams = new URLSearchParams();
     if (params.page) searchParams.set('page', params.page.toString());
-    if (params.limit) searchParams.set('limit', params.limit.toString());
-    if (params.repository_id) searchParams.set('repository_id', params.repository_id);
+    if (params.limit) searchParams.set('page_size', params.limit.toString());
     if (params.status) searchParams.set('status', params.status);
 
     const query = searchParams.toString();
-    const endpoint = query ? `/scans?${query}` : '/scans';
+    let endpoint = '/scan-jobs';
+    
+    // Use specific endpoints for repository or user scans
+    if (params.repository_id) {
+      endpoint = `/repositories/${params.repository_id}/scan-jobs`;
+    } else if (params.user_id) {
+      endpoint = `/users/${params.user_id}/scan-jobs`;
+    }
+    
+    if (query) {
+      endpoint += `?${query}`;
+    }
 
-    return this.request<ScanListResponse>(endpoint);
+    return this.enhancedRequest<ScanListResponse>(endpoint);
   }
 
-  async submitScan(scanRequest: SubmitScanRequest): Promise<ApiResponse<Scan>> {
-    return this.request<Scan>('/scans', {
+  async createScanJob(scanRequest: SubmitScanRequest): Promise<ApiResponse<Scan>> {
+    return this.enhancedRequest<Scan>('/scan-jobs', {
       method: 'POST',
       body: JSON.stringify(scanRequest),
+    }, {
+      maxAttempts: 2,
+      retryCondition: (error) => error?.status >= 500
     });
   }
 
+  async getScanJob(scanId: string): Promise<ApiResponse<Scan>> {
+    return this.enhancedRequest<Scan>(`/scan-jobs/${scanId}`);
+  }
+
+  async getScanJobWithDetails(scanId: string): Promise<ApiResponse<ScanResults>> {
+    return this.enhancedRequest<ScanResults>(`/scan-jobs/${scanId}/details`);
+  }
+
+  async startScanJob(scanId: string): Promise<ApiResponse<{ message: string }>> {
+    return this.enhancedRequest<{ message: string }>(`/scan-jobs/${scanId}/start`, {
+      method: 'POST',
+    });
+  }
+
+  async cancelScanJob(scanId: string): Promise<ApiResponse<{ message: string }>> {
+    return this.enhancedRequest<{ message: string }>(`/scan-jobs/${scanId}/cancel`, {
+      method: 'POST',
+    });
+  }
+
+  async retryScanJob(scanId: string): Promise<ApiResponse<Scan>> {
+    return this.enhancedRequest<Scan>(`/scan-jobs/${scanId}/retry`, {
+      method: 'POST',
+    });
+  }
+
+  async getQueuedJobs(limit: number = 50): Promise<ApiResponse<ScanListResponse>> {
+    return this.enhancedRequest<ScanListResponse>(`/scan-jobs/queued?limit=${limit}`);
+  }
+
+  async getRunningJobs(): Promise<ApiResponse<ScanListResponse>> {
+    return this.enhancedRequest<ScanListResponse>('/scan-jobs/running');
+  }
+
+  // Legacy methods for backward compatibility
+  async getScans(params: PaginationParams & { repository_id?: string; status?: string } = {}): Promise<ApiResponse<ScanListResponse>> {
+    return this.getScanJobs(params);
+  }
+
+  async submitScan(scanRequest: SubmitScanRequest): Promise<ApiResponse<Scan>> {
+    return this.createScanJob(scanRequest);
+  }
+
   async getScanResults(scanId: string): Promise<ApiResponse<ScanResults>> {
-    return this.request<ScanResults>(`/scans/${scanId}/results`);
+    return this.getScanJobWithDetails(scanId);
   }
 
   async getScan(scanId: string): Promise<ApiResponse<Scan>> {
-    return this.request<Scan>(`/scans/${scanId}`);
+    return this.getScanJob(scanId);
   }
 
   // Dashboard Methods
@@ -535,6 +735,44 @@ class ApiClient {
   // Health Check
   async healthCheck(): Promise<ApiResponse<{ status: string; timestamp: string }>> {
     return this.enhancedRequest<{ status: string; timestamp: string }>('/health');
+  }
+
+  // Connection state management
+  private connectionState: 'connected' | 'disconnected' | 'reconnecting' = 'connected';
+  private connectionListeners: Array<(state: string) => void> = [];
+
+  onConnectionStateChange(listener: (state: string) => void): () => void {
+    this.connectionListeners.push(listener);
+    return () => {
+      const index = this.connectionListeners.indexOf(listener);
+      if (index > -1) {
+        this.connectionListeners.splice(index, 1);
+      }
+    };
+  }
+
+  private setConnectionState(state: 'connected' | 'disconnected' | 'reconnecting'): void {
+    if (this.connectionState !== state) {
+      this.connectionState = state;
+      this.connectionListeners.forEach(listener => listener(state));
+    }
+  }
+
+  getConnectionState(): string {
+    return this.connectionState;
+  }
+
+  // Network connectivity check
+  async checkConnectivity(): Promise<boolean> {
+    try {
+      const response = await this.request<{ status: string }>('/health');
+      const isConnected = !response.error;
+      this.setConnectionState(isConnected ? 'connected' : 'disconnected');
+      return isConnected;
+    } catch {
+      this.setConnectionState('disconnected');
+      return false;
+    }
   }
 
   // Utility Methods
@@ -554,10 +792,100 @@ class ApiClient {
       this.clearAuthToken();
     }
   }
+
+  // Request timeout configuration
+  setTimeout(timeout: number): void {
+    this.timeout = timeout;
+  }
+
+  getTimeout(): number {
+    return this.timeout;
+  }
 }
 
 // Create and export singleton instance
 export const apiClient = new ApiClient(API_BASE_URL);
+
+// Add global error handling interceptor
+apiClient.addResponseInterceptor((response) => {
+  // Handle global errors
+  if (response.error) {
+    switch (response.error.code) {
+      case 'NETWORK_ERROR':
+        // Show network error notification
+        console.error('[API] Network error detected:', response.error.message);
+        break;
+      case 'TIMEOUT':
+        // Show timeout notification
+        console.error('[API] Request timeout:', response.error.message);
+        break;
+      case 'HTTP_401':
+        // Handle authentication error
+        console.error('[API] Authentication error, redirecting to login');
+        window.dispatchEvent(new CustomEvent('auth:logout'));
+        break;
+      case 'HTTP_403':
+        // Handle authorization error
+        console.error('[API] Authorization error:', response.error.message);
+        break;
+      case 'HTTP_429':
+        // Handle rate limiting
+        console.warn('[API] Rate limit exceeded:', response.error.message);
+        break;
+      case 'HTTP_500':
+      case 'HTTP_502':
+      case 'HTTP_503':
+      case 'HTTP_504':
+        // Handle server errors
+        console.error('[API] Server error:', response.error.message);
+        break;
+    }
+  }
+  return response;
+});
+
+// Add request monitoring interceptor
+apiClient.addRequestInterceptor((config) => {
+  // Add request timestamp for monitoring
+  config.headers['X-Request-Timestamp'] = Date.now().toString();
+  
+  // Add client version for debugging
+  config.headers['X-Client-Version'] = '1.0.0';
+  
+  return config;
+});
+
+// Periodic connectivity check
+let connectivityCheckInterval: NodeJS.Timeout | null = null;
+
+export function startConnectivityMonitoring(intervalMs: number = 30000): void {
+  if (connectivityCheckInterval) {
+    clearInterval(connectivityCheckInterval);
+  }
+  
+  connectivityCheckInterval = setInterval(async () => {
+    await apiClient.checkConnectivity();
+  }, intervalMs);
+}
+
+export function stopConnectivityMonitoring(): void {
+  if (connectivityCheckInterval) {
+    clearInterval(connectivityCheckInterval);
+    connectivityCheckInterval = null;
+  }
+}
+
+// Export utility functions
+export function isApiError(error: any): error is ApiError {
+  return error && typeof error.code === 'string' && typeof error.message === 'string';
+}
+
+export function getErrorMessage(error: ApiError | Error | string): string {
+  if (typeof error === 'string') return error;
+  if (error instanceof Error) return error.message;
+  if (isApiError(error)) return error.message;
+  return 'An unknown error occurred';
+}
 
 // Export default instance
 export default apiClient;
