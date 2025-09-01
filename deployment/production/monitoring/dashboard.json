@@ -1,0 +1,371 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "AgentScan Production Dashboard",
+    "tags": ["agentscan", "production"],
+    "style": "dark",
+    "timezone": "browser",
+    "refresh": "30s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "System Overview",
+        "type": "stat",
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "up{job=\"agentscan-api\"}",
+            "legendFormat": "API Status",
+            "refId": "A"
+          },
+          {
+            "expr": "agentscan_database_connections_active",
+            "legendFormat": "DB Connections",
+            "refId": "B"
+          },
+          {
+            "expr": "agentscan_redis_connections_active",
+            "legendFormat": "Redis Connections",
+            "refId": "C"
+          },
+          {
+            "expr": "rate(http_requests_total[5m])",
+            "legendFormat": "Requests/sec",
+            "refId": "D"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "custom": {"displayMode": "list", "orientation": "horizontal"},
+            "mappings": [],
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "red", "value": 0},
+                {"color": "yellow", "value": 0.8},
+                {"color": "green", "value": 1}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Request Rate",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "targets": [
+          {
+            "expr": "rate(http_requests_total[5m])",
+            "legendFormat": "{{method}} {{status}}",
+            "refId": "A"
+          }
+        ],
+        "yAxes": [
+          {"label": "Requests/sec", "min": 0},
+          {"show": false}
+        ],
+        "legend": {"show": true, "values": false, "min": false, "max": false, "current": false, "total": false, "avg": false}
+      },
+      {
+        "id": 3,
+        "title": "Response Time",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "50th percentile",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "95th percentile",
+            "refId": "B"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "99th percentile",
+            "refId": "C"
+          }
+        ],
+        "yAxes": [
+          {"label": "Seconds", "min": 0},
+          {"show": false}
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Error Rate",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{status=~\"4..\"}[5m])",
+            "legendFormat": "4xx Errors",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(http_requests_total{status=~\"5..\"}[5m])",
+            "legendFormat": "5xx Errors",
+            "refId": "B"
+          }
+        ],
+        "yAxes": [
+          {"label": "Errors/sec", "min": 0},
+          {"show": false}
+        ],
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": {"params": [0.05], "type": "gt"},
+              "operator": {"type": "and"},
+              "query": {"params": ["B", "5m", "now"]},
+              "reducer": {"params": [], "type": "avg"},
+              "type": "query"
+            }
+          ],
+          "executionErrorState": "alerting",
+          "for": "2m",
+          "frequency": "10s",
+          "handler": 1,
+          "name": "High Error Rate",
+          "noDataState": "no_data",
+          "notifications": []
+        }
+      },
+      {
+        "id": 5,
+        "title": "System Resources",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+        "targets": [
+          {
+            "expr": "100 - (avg by(instance) (irate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+            "legendFormat": "CPU Usage %",
+            "refId": "A"
+          },
+          {
+            "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
+            "legendFormat": "Memory Usage %",
+            "refId": "B"
+          },
+          {
+            "expr": "(1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100",
+            "legendFormat": "Disk Usage %",
+            "refId": "C"
+          }
+        ],
+        "yAxes": [
+          {"label": "Percentage", "min": 0, "max": 100},
+          {"show": false}
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Database Performance",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+        "targets": [
+          {
+            "expr": "agentscan_database_connections_active",
+            "legendFormat": "Active Connections",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(agentscan_database_queries_total[5m])",
+            "legendFormat": "Queries/sec",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(agentscan_database_query_duration_seconds_sum[5m]) / rate(agentscan_database_query_duration_seconds_count[5m])",
+            "legendFormat": "Avg Query Time",
+            "refId": "C"
+          }
+        ],
+        "yAxes": [
+          {"label": "Count/Time", "min": 0},
+          {"show": false}
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Business Metrics",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+        "targets": [
+          {
+            "expr": "rate(agentscan_scans_total[5m])",
+            "legendFormat": "Scans Started/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(agentscan_scans_completed_total[5m])",
+            "legendFormat": "Scans Completed/sec",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(agentscan_scans_failed_total[5m])",
+            "legendFormat": "Scans Failed/sec",
+            "refId": "C"
+          },
+          {
+            "expr": "agentscan_scans_running",
+            "legendFormat": "Currently Running",
+            "refId": "D"
+          }
+        ],
+        "yAxes": [
+          {"label": "Count/sec", "min": 0},
+          {"show": false}
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Security Events",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
+        "targets": [
+          {
+            "expr": "rate(agentscan_auth_failures_total[5m])",
+            "legendFormat": "Auth Failures/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(agentscan_rate_limit_exceeded_total[5m])",
+            "legendFormat": "Rate Limit Exceeded/sec",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(agentscan_security_events_total[5m])",
+            "legendFormat": "Security Events/sec",
+            "refId": "C"
+          }
+        ],
+        "yAxes": [
+          {"label": "Events/sec", "min": 0},
+          {"show": false}
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Cache Performance",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
+        "targets": [
+          {
+            "expr": "rate(agentscan_cache_hits_total[5m])",
+            "legendFormat": "Cache Hits/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(agentscan_cache_misses_total[5m])",
+            "legendFormat": "Cache Misses/sec",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(agentscan_cache_hits_total[5m]) / (rate(agentscan_cache_hits_total[5m]) + rate(agentscan_cache_misses_total[5m]))",
+            "legendFormat": "Hit Rate",
+            "refId": "C"
+          }
+        ],
+        "yAxes": [
+          {"label": "Rate", "min": 0},
+          {"show": false}
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Top Endpoints by Request Count",
+        "type": "table",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40},
+        "targets": [
+          {
+            "expr": "topk(10, sum by(method, handler) (rate(http_requests_total[5m])))",
+            "legendFormat": "{{method}} {{handler}}",
+            "refId": "A",
+            "format": "table"
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {"Time": true},
+              "indexByName": {},
+              "renameByName": {
+                "Value": "Requests/sec",
+                "method": "Method",
+                "handler": "Endpoint"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 11,
+        "title": "Recent Alerts",
+        "type": "table",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40},
+        "targets": [
+          {
+            "expr": "ALERTS{alertstate=\"firing\"}",
+            "legendFormat": "{{alertname}}",
+            "refId": "A",
+            "format": "table"
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {"Time": true, "__name__": true},
+              "indexByName": {},
+              "renameByName": {
+                "alertname": "Alert",
+                "severity": "Severity",
+                "service": "Service",
+                "instance": "Instance"
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "instance",
+          "type": "query",
+          "query": "label_values(up{job=\"agentscan-api\"}, instance)",
+          "refresh": 1,
+          "includeAll": true,
+          "multi": true
+        },
+        {
+          "name": "interval",
+          "type": "interval",
+          "query": "1m,5m,10m,30m,1h",
+          "refresh": 2,
+          "current": {"text": "5m", "value": "5m"}
+        }
+      ]
+    },
+    "annotations": {
+      "list": [
+        {
+          "name": "Deployments",
+          "datasource": "prometheus",
+          "expr": "agentscan_deployment_info",
+          "titleFormat": "Deployment",
+          "textFormat": "Version: {{version}}"
+        }
+      ]
+    }
+  }
+}

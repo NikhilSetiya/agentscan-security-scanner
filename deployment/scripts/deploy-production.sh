@@ -1,1 +1,451 @@
-#!/bin/bash\n\n# AgentScan Production Deployment Script\n# Consolidated deployment script for all environments and platforms\n# Supports Docker, Kubernetes, and DigitalOcean App Platform\n\nset -euo pipefail\n\n# Script configuration\nSCRIPT_DIR=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\"\nPROJECT_ROOT=\"$(dirname \"$(dirname \"$SCRIPT_DIR\")\")\"  # Go up two levels from deployment/scripts\nDEPLOYMENT_DIR=\"$PROJECT_ROOT/deployment\"\n\n# Default configuration\nENVIRONMENT=\"production\"\nPLATFORM=\"kubernetes\"  # kubernetes, docker, digitalocean\nNAMESPACE=\"agentscan\"\nDRY_RUN=false\nVERBOSE=false\nSKIP_HEALTH_CHECKS=false\nSKIP_PREREQUISITES=false\nFORCE_DEPLOY=false\nROLLBACK_ON_FAILURE=true\nDEPLOYMENT_TIMEOUT=600\nHEALTH_CHECK_TIMEOUT=300\n\n# Colors for output\nRED='\\033[0;31m'\nGREEN='\\033[0;32m'\nYELLOW='\\033[1;33m'\nBLUE='\\033[0;34m'\nNC='\\033[0m' # No Color\n\n# Logging functions\nlog_info() {\n    echo -e \"${BLUE}[INFO]${NC} $1\"\n}\n\nlog_success() {\n    echo -e \"${GREEN}[SUCCESS]${NC} $1\"\n}\n\nlog_warning() {\n    echo -e \"${YELLOW}[WARNING]${NC} $1\"\n}\n\nlog_error() {\n    echo -e \"${RED}[ERROR]${NC} $1\"\n}\n\nlog_verbose() {\n    if [[ \"$VERBOSE\" == \"true\" ]]; then\n        echo -e \"${BLUE}[VERBOSE]${NC} $1\"\n    fi\n}\n\n# Function to show help\nshow_help() {\n    cat << EOF\nAgentScan Production Deployment Script\n\nUsage: $0 [OPTIONS] [COMMAND]\n\nCommands:\n    deploy              Deploy the application (default)\n    status              Show deployment status\n    rollback [version]  Rollback to previous or specific version\n    health              Run health checks\n    logs                Show application logs\n    cleanup             Clean up old deployments\n    validate            Validate deployment configuration\n\nOptions:\n    --environment ENV        Environment to deploy (default: production)\n    --platform PLATFORM     Deployment platform: kubernetes, docker, digitalocean (default: kubernetes)\n    --namespace NS           Kubernetes namespace (default: agentscan)\n    --image-tag TAG          Docker image tag to deploy\n    --config-file FILE       Custom configuration file\n    --dry-run               Perform dry run without making changes\n    --verbose               Enable verbose logging\n    --skip-health-checks    Skip health checks after deployment\n    --skip-prerequisites    Skip prerequisite validation\n    --force                 Force deployment even if validation fails\n    --no-rollback          Don't rollback on deployment failure\n    --timeout SECONDS       Deployment timeout (default: 600)\n    --health-timeout SEC    Health check timeout (default: 300)\n    --help                  Show this help message\n\nEnvironment Variables:\n    AGENTSCAN_IMAGE_TAG     Docker image tag\n    AGENTSCAN_CONFIG_FILE   Configuration file path\n    KUBECONFIG             Kubernetes config file\n    DOCKER_REGISTRY        Docker registry URL\n    DO_TOKEN               DigitalOcean API token\n    \nExamples:\n    $0 deploy --platform kubernetes --image-tag v1.2.3\n    $0 deploy --platform digitalocean --environment staging\n    $0 rollback v1.2.2\n    $0 status --platform docker\n    $0 --dry-run --verbose deploy\n\nEOF\n}\n\n# Function to validate prerequisites\nvalidate_prerequisites() {\n    if [[ \"$SKIP_PREREQUISITES\" == \"true\" ]]; then\n        log_warning \"Skipping prerequisite validation\"\n        return 0\n    fi\n\n    log_info \"Validating prerequisites for platform: $PLATFORM\"\n    \n    local missing_tools=()\n    \n    # Common tools\n    local common_tools=(\"curl\" \"jq\" \"git\")\n    for tool in \"${common_tools[@]}\"; do\n        if ! command -v \"$tool\" &> /dev/null; then\n            missing_tools+=(\"$tool\")\n        fi\n    done\n    \n    # Platform-specific tools\n    case \"$PLATFORM\" in\n        \"kubernetes\")\n            local k8s_tools=(\"kubectl\" \"helm\")\n            for tool in \"${k8s_tools[@]}\"; do\n                if ! command -v \"$tool\" &> /dev/null; then\n                    missing_tools+=(\"$tool\")\n                fi\n            done\n            \n            # Check kubectl connection\n            if command -v kubectl &> /dev/null; then\n                if ! kubectl cluster-info &> /dev/null; then\n                    log_error \"kubectl is not connected to a cluster\"\n                    return 1\n                fi\n            fi\n            ;;\n        \"docker\")\n            local docker_tools=(\"docker\" \"docker-compose\")\n            for tool in \"${docker_tools[@]}\"; do\n                if ! command -v \"$tool\" &> /dev/null; then\n                    missing_tools+=(\"$tool\")\n                fi\n            done\n            \n            # Check Docker daemon\n            if command -v docker &> /dev/null; then\n                if ! docker info &> /dev/null; then\n                    log_error \"Docker daemon is not running\"\n                    return 1\n                fi\n            fi\n            ;;\n        \"digitalocean\")\n            if ! command -v doctl &> /dev/null; then\n                missing_tools+=(\"doctl\")\n            fi\n            \n            # Check doctl authentication\n            if command -v doctl &> /dev/null; then\n                if ! doctl account get &> /dev/null; then\n                    log_error \"doctl is not authenticated. Run: doctl auth init\"\n                    return 1\n                fi\n            fi\n            ;;\n    esac\n    \n    if [[ ${#missing_tools[@]} -gt 0 ]]; then\n        log_error \"Missing required tools: ${missing_tools[*]}\"\n        log_error \"Please install the missing tools and try again\"\n        return 1\n    fi\n    \n    log_success \"Prerequisites validation passed\"\n    return 0\n}\n\n# Function to validate environment configuration\nvalidate_environment() {\n    log_info \"Validating environment configuration...\"\n    \n    local config_errors=()\n    \n    # Check required environment variables based on platform\n    case \"$PLATFORM\" in\n        \"kubernetes\")\n            if [[ -z \"${KUBECONFIG:-}\" ]] && [[ ! -f \"$HOME/.kube/config\" ]]; then\n                config_errors+=(\"KUBECONFIG not set and ~/.kube/config not found\")\n            fi\n            ;;\n        \"digitalocean\")\n            if [[ -z \"${DO_TOKEN:-}\" ]]; then\n                config_errors+=(\"DO_TOKEN environment variable not set\")\n            fi\n            ;;\n    esac\n    \n    # Check image tag\n    if [[ -z \"${IMAGE_TAG:-}\" ]]; then\n        log_warning \"IMAGE_TAG not specified, will use 'latest'\"\n        IMAGE_TAG=\"latest\"\n    fi\n    \n    # Check configuration files exist\n    local config_files=()\n    case \"$PLATFORM\" in\n        \"kubernetes\")\n            config_files=(\"$DEPLOYMENT_DIR/k8s/namespace.yaml\" \"$DEPLOYMENT_DIR/k8s/api-deployment.yaml\")\n            ;;\n        \"docker\")\n            config_files=(\"$DEPLOYMENT_DIR/production/docker-compose.yml\")\n            ;;\n        \"digitalocean\")\n            config_files=(\"$DEPLOYMENT_DIR/digitalocean/app.yaml\")\n            ;;\n    esac\n    \n    for config_file in \"${config_files[@]}\"; do\n        if [[ ! -f \"$config_file\" ]]; then\n            config_errors+=(\"Configuration file not found: $config_file\")\n        fi\n    done\n    \n    if [[ ${#config_errors[@]} -gt 0 ]]; then\n        log_error \"Environment validation failed:\"\n        printf '  %s\\n' \"${config_errors[@]}\"\n        \n        if [[ \"$FORCE_DEPLOY\" != \"true\" ]]; then\n            return 1\n        else\n            log_warning \"Continuing deployment due to --force flag\"\n        fi\n    fi\n    \n    log_success \"Environment validation passed\"\n    return 0\n}\n\n# Function to deploy to Kubernetes\ndeploy_kubernetes() {\n    log_info \"Deploying to Kubernetes cluster...\"\n    \n    if [[ \"$DRY_RUN\" == \"true\" ]]; then\n        log_warning \"DRY RUN: Would deploy to Kubernetes\"\n        return 0\n    fi\n    \n    # Create namespace if it doesn't exist\n    if ! kubectl get namespace \"$NAMESPACE\" &> /dev/null; then\n        log_info \"Creating namespace: $NAMESPACE\"\n        kubectl create namespace \"$NAMESPACE\"\n    fi\n    \n    # Apply Kubernetes manifests in order\n    local manifests=(\n        \"namespace.yaml\"\n        \"configmap.yaml\"\n        \"secrets.yaml\"\n        \"postgresql.yaml\"\n        \"redis.yaml\"\n        \"api-deployment.yaml\"\n        \"orchestrator-deployment.yaml\"\n        \"services.yaml\"\n        \"ingress.yaml\"\n    )\n    \n    for manifest in \"${manifests[@]}\"; do\n        local manifest_path=\"$DEPLOYMENT_DIR/k8s/$manifest\"\n        \n        if [[ -f \"$manifest_path\" ]]; then\n            log_verbose \"Applying manifest: $manifest\"\n            \n            # Replace image tag in deployment manifests\n            if [[ \"$manifest\" == *\"deployment.yaml\" ]]; then\n                sed \"s|image: agentscan/.*:.*|image: agentscan/${manifest%%-*}:${IMAGE_TAG}|g\" \"$manifest_path\" | kubectl apply -f - -n \"$NAMESPACE\"\n            else\n                kubectl apply -f \"$manifest_path\" -n \"$NAMESPACE\"\n            fi\n        else\n            log_warning \"Manifest not found: $manifest_path\"\n        fi\n    done\n    \n    # Wait for deployments to be ready\n    log_info \"Waiting for deployments to be ready...\"\n    if ! kubectl wait --for=condition=available --timeout=\"${DEPLOYMENT_TIMEOUT}s\" deployment --all -n \"$NAMESPACE\"; then\n        log_error \"Deployment failed: timeout waiting for deployments to be ready\"\n        return 1\n    fi\n    \n    log_success \"Kubernetes deployment completed successfully\"\n    return 0\n}\n\n# Function to deploy using Docker Compose\ndeploy_docker() {\n    log_info \"Deploying using Docker Compose...\"\n    \n    if [[ \"$DRY_RUN\" == \"true\" ]]; then\n        log_warning \"DRY RUN: Would deploy using Docker Compose\"\n        return 0\n    fi\n    \n    local compose_file=\"$DEPLOYMENT_DIR/production/docker-compose.yml\"\n    \n    # Set image tag environment variable\n    export AGENTSCAN_IMAGE_TAG=\"$IMAGE_TAG\"\n    \n    # Pull latest images\n    log_info \"Pulling Docker images...\"\n    docker-compose -f \"$compose_file\" pull\n    \n    # Deploy services\n    log_info \"Starting services...\"\n    docker-compose -f \"$compose_file\" up -d\n    \n    # Wait for services to be healthy\n    log_info \"Waiting for services to be healthy...\"\n    local timeout=$DEPLOYMENT_TIMEOUT\n    local elapsed=0\n    local interval=10\n    \n    while [[ $elapsed -lt $timeout ]]; do\n        if docker-compose -f \"$compose_file\" ps | grep -q \"Up (healthy)\"; then\n            log_success \"Docker deployment completed successfully\"\n            return 0\n        fi\n        \n        sleep $interval\n        elapsed=$((elapsed + interval))\n        log_verbose \"Waiting for services to be healthy... (${elapsed}s/${timeout}s)\"\n    done\n    \n    log_error \"Deployment failed: timeout waiting for services to be healthy\"\n    return 1\n}\n\n# Function to deploy to DigitalOcean App Platform\ndeploy_digitalocean() {\n    log_info \"Deploying to DigitalOcean App Platform...\"\n    \n    if [[ \"$DRY_RUN\" == \"true\" ]]; then\n        log_warning \"DRY RUN: Would deploy to DigitalOcean App Platform\"\n        return 0\n    fi\n    \n    local app_spec=\"$DEPLOYMENT_DIR/digitalocean/app.yaml\"\n    local app_name=\"agentscan-${ENVIRONMENT}\"\n    \n    # Check if app exists\n    if doctl apps get \"$app_name\" &> /dev/null; then\n        log_info \"Updating existing app: $app_name\"\n        doctl apps update \"$app_name\" --spec \"$app_spec\" --wait\n    else\n        log_info \"Creating new app: $app_name\"\n        doctl apps create --spec \"$app_spec\" --wait\n    fi\n    \n    log_success \"DigitalOcean deployment completed successfully\"\n    return 0\n}\n\n# Function to perform health checks\nperform_health_checks() {\n    if [[ \"$SKIP_HEALTH_CHECKS\" == \"true\" ]]; then\n        log_warning \"Skipping health checks\"\n        return 0\n    fi\n    \n    log_info \"Performing health checks...\"\n    \n    local health_endpoints=()\n    local timeout=$HEALTH_CHECK_TIMEOUT\n    \n    case \"$PLATFORM\" in\n        \"kubernetes\")\n            # Get service endpoints\n            local api_service=$(kubectl get service agentscan-api -n \"$NAMESPACE\" -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo \"\")\n            if [[ -n \"$api_service\" ]]; then\n                health_endpoints+=(\"http://${api_service}:8080/health\")\n            fi\n            ;;\n        \"docker\")\n            health_endpoints+=(\"http://localhost:8080/health\")\n            health_endpoints+=(\"http://localhost:8081/health\")\n            ;;\n        \"digitalocean\")\n            local app_url=$(doctl apps get \"agentscan-${ENVIRONMENT}\" --format LiveURL --no-header 2>/dev/null || echo \"\")\n            if [[ -n \"$app_url\" ]]; then\n                health_endpoints+=(\"${app_url}/health\")\n            fi\n            ;;\n    esac\n    \n    local failed_checks=()\n    \n    for endpoint in \"${health_endpoints[@]}\"; do\n        log_verbose \"Checking health endpoint: $endpoint\"\n        \n        local retries=0\n        local max_retries=$((timeout / 10))\n        local success=false\n        \n        while [[ $retries -lt $max_retries ]]; do\n            if curl -f -s --max-time 10 \"$endpoint\" > /dev/null 2>&1; then\n                log_success \"Health check passed: $endpoint\"\n                success=true\n                break\n            fi\n            \n            sleep 10\n            ((retries++))\n            log_verbose \"Health check retry $retries/$max_retries for $endpoint\"\n        done\n        \n        if [[ \"$success\" != \"true\" ]]; then\n            failed_checks+=(\"$endpoint\")\n        fi\n    done\n    \n    if [[ ${#failed_checks[@]} -gt 0 ]]; then\n        log_error \"Health checks failed for endpoints:\"\n        printf '  %s\\n' \"${failed_checks[@]}\"\n        return 1\n    fi\n    \n    log_success \"All health checks passed\"\n    return 0\n}\n\n# Function to rollback deployment\nrollback_deployment() {\n    local target_version=\"${1:-}\"\n    \n    log_info \"Rolling back deployment...\"\n    \n    if [[ \"$DRY_RUN\" == \"true\" ]]; then\n        log_warning \"DRY RUN: Would rollback deployment\"\n        return 0\n    fi\n    \n    case \"$PLATFORM\" in\n        \"kubernetes\")\n            if [[ -n \"$target_version\" ]]; then\n                log_info \"Rolling back to version: $target_version\"\n                kubectl rollout undo deployment/agentscan-api -n \"$NAMESPACE\" --to-revision=\"$target_version\"\n                kubectl rollout undo deployment/agentscan-orchestrator -n \"$NAMESPACE\" --to-revision=\"$target_version\"\n            else\n                log_info \"Rolling back to previous version\"\n                kubectl rollout undo deployment/agentscan-api -n \"$NAMESPACE\"\n                kubectl rollout undo deployment/agentscan-orchestrator -n \"$NAMESPACE\"\n            fi\n            \n            # Wait for rollback to complete\n            kubectl rollout status deployment/agentscan-api -n \"$NAMESPACE\" --timeout=\"${DEPLOYMENT_TIMEOUT}s\"\n            kubectl rollout status deployment/agentscan-orchestrator -n \"$NAMESPACE\" --timeout=\"${DEPLOYMENT_TIMEOUT}s\"\n            ;;\n        \"docker\")\n            log_warning \"Docker rollback not implemented - please use docker-compose down and redeploy\"\n            ;;\n        \"digitalocean\")\n            log_warning \"DigitalOcean rollback not implemented - please redeploy previous version\"\n            ;;\n    esac\n    \n    log_success \"Rollback completed\"\n    return 0\n}\n\n# Function to show deployment status\nshow_status() {\n    log_info \"Deployment status for platform: $PLATFORM\"\n    \n    case \"$PLATFORM\" in\n        \"kubernetes\")\n            echo \"=== Namespace Status ===\"\n            kubectl get namespace \"$NAMESPACE\" 2>/dev/null || echo \"Namespace not found\"\n            echo \"\"\n            \n            echo \"=== Deployment Status ===\"\n            kubectl get deployments -n \"$NAMESPACE\" -o wide 2>/dev/null || echo \"No deployments found\"\n            echo \"\"\n            \n            echo \"=== Pod Status ===\"\n            kubectl get pods -n \"$NAMESPACE\" -o wide 2>/dev/null || echo \"No pods found\"\n            echo \"\"\n            \n            echo \"=== Service Status ===\"\n            kubectl get services -n \"$NAMESPACE\" -o wide 2>/dev/null || echo \"No services found\"\n            echo \"\"\n            \n            echo \"=== Ingress Status ===\"\n            kubectl get ingress -n \"$NAMESPACE\" -o wide 2>/dev/null || echo \"No ingress found\"\n            ;;\n        \"docker\")\n            echo \"=== Docker Compose Status ===\"\n            local compose_file=\"$DEPLOYMENT_DIR/production/docker-compose.yml\"\n            if [[ -f \"$compose_file\" ]]; then\n                docker-compose -f \"$compose_file\" ps\n            else\n                echo \"Docker compose file not found\"\n            fi\n            ;;\n        \"digitalocean\")\n            echo \"=== DigitalOcean App Status ===\"\n            local app_name=\"agentscan-${ENVIRONMENT}\"\n            doctl apps get \"$app_name\" 2>/dev/null || echo \"App not found: $app_name\"\n            ;;\n    esac\n}\n\n# Function to show logs\nshow_logs() {\n    local service=\"${1:-api}\"\n    local lines=\"${2:-100}\"\n    \n    log_info \"Showing logs for service: $service (last $lines lines)\"\n    \n    case \"$PLATFORM\" in\n        \"kubernetes\")\n            kubectl logs -n \"$NAMESPACE\" deployment/\"agentscan-$service\" --tail=\"$lines\" -f\n            ;;\n        \"docker\")\n            local compose_file=\"$DEPLOYMENT_DIR/production/docker-compose.yml\"\n            docker-compose -f \"$compose_file\" logs --tail=\"$lines\" -f \"$service\"\n            ;;\n        \"digitalocean\")\n            local app_name=\"agentscan-${ENVIRONMENT}\"\n            doctl apps logs \"$app_name\" --type=run --tail=\"$lines\" -f\n            ;;\n    esac\n}\n\n# Function to cleanup old deployments\ncleanup_deployments() {\n    log_info \"Cleaning up old deployments...\"\n    \n    if [[ \"$DRY_RUN\" == \"true\" ]]; then\n        log_warning \"DRY RUN: Would cleanup old deployments\"\n        return 0\n    fi\n    \n    case \"$PLATFORM\" in\n        \"kubernetes\")\n            # Keep last 3 replica sets\n            kubectl patch deployment agentscan-api -n \"$NAMESPACE\" -p '{\"spec\":{\"revisionHistoryLimit\":3}}'\n            kubectl patch deployment agentscan-orchestrator -n \"$NAMESPACE\" -p '{\"spec\":{\"revisionHistoryLimit\":3}}'\n            \n            # Clean up completed jobs older than 24 hours\n            kubectl delete jobs -n \"$NAMESPACE\" --field-selector status.successful=1 --ignore-not-found=true\n            ;;\n        \"docker\")\n            # Remove unused images\n            docker image prune -f\n            \n            # Remove unused volumes\n            docker volume prune -f\n            ;;\n        \"digitalocean\")\n            log_info \"DigitalOcean cleanup is handled automatically\"\n            ;;\n    esac\n    \n    log_success \"Cleanup completed\"\n}\n\n# Function to validate deployment configuration\nvalidate_config() {\n    log_info \"Validating deployment configuration...\"\n    \n    local validation_errors=()\n    \n    case \"$PLATFORM\" in\n        \"kubernetes\")\n            # Validate Kubernetes manifests\n            local manifests=(\"$DEPLOYMENT_DIR/k8s/\"*.yaml)\n            for manifest in \"${manifests[@]}\"; do\n                if [[ -f \"$manifest\" ]]; then\n                    if ! kubectl apply --dry-run=client -f \"$manifest\" &> /dev/null; then\n                        validation_errors+=(\"Invalid Kubernetes manifest: $manifest\")\n                    fi\n                fi\n            done\n            ;;\n        \"docker\")\n            # Validate Docker Compose file\n            local compose_file=\"$DEPLOYMENT_DIR/production/docker-compose.yml\"\n            if [[ -f \"$compose_file\" ]]; then\n                if ! docker-compose -f \"$compose_file\" config &> /dev/null; then\n                    validation_errors+=(\"Invalid Docker Compose file: $compose_file\")\n                fi\n            fi\n            ;;\n        \"digitalocean\")\n            # Validate DigitalOcean app spec\n            local app_spec=\"$DEPLOYMENT_DIR/digitalocean/app.yaml\"\n            if [[ -f \"$app_spec\" ]]; then\n                if ! doctl apps spec validate \"$app_spec\" &> /dev/null; then\n                    validation_errors+=(\"Invalid DigitalOcean app spec: $app_spec\")\n                fi\n            fi\n            ;;\n    esac\n    \n    if [[ ${#validation_errors[@]} -gt 0 ]]; then\n        log_error \"Configuration validation failed:\"\n        printf '  %s\\n' \"${validation_errors[@]}\"\n        return 1\n    fi\n    \n    log_success \"Configuration validation passed\"\n    return 0\n}\n\n# Main deployment function\nmain_deploy() {\n    log_info \"Starting deployment to $PLATFORM platform\"\n    log_info \"Environment: $ENVIRONMENT\"\n    log_info \"Image tag: $IMAGE_TAG\"\n    log_info \"Namespace: $NAMESPACE\"\n    \n    if [[ \"$DRY_RUN\" == \"true\" ]]; then\n        log_warning \"Running in DRY RUN mode - no changes will be made\"\n    fi\n    \n    # Validate prerequisites and environment\n    if ! validate_prerequisites; then\n        log_error \"Prerequisites validation failed\"\n        exit 1\n    fi\n    \n    if ! validate_environment; then\n        log_error \"Environment validation failed\"\n        exit 1\n    fi\n    \n    # Validate configuration\n    if ! validate_config; then\n        log_error \"Configuration validation failed\"\n        if [[ \"$FORCE_DEPLOY\" != \"true\" ]]; then\n            exit 1\n        else\n            log_warning \"Continuing deployment due to --force flag\"\n        fi\n    fi\n    \n    # Perform deployment based on platform\n    local deployment_success=false\n    \n    case \"$PLATFORM\" in\n        \"kubernetes\")\n            if deploy_kubernetes; then\n                deployment_success=true\n            fi\n            ;;\n        \"docker\")\n            if deploy_docker; then\n                deployment_success=true\n            fi\n            ;;\n        \"digitalocean\")\n            if deploy_digitalocean; then\n                deployment_success=true\n            fi\n            ;;\n        *)\n            log_error \"Unsupported platform: $PLATFORM\"\n            exit 1\n            ;;\n    esac\n    \n    # Handle deployment result\n    if [[ \"$deployment_success\" == \"true\" ]]; then\n        log_success \"Deployment completed successfully\"\n        \n        # Perform health checks\n        if ! perform_health_checks; then\n            log_error \"Health checks failed after deployment\"\n            \n            if [[ \"$ROLLBACK_ON_FAILURE\" == \"true\" ]] && [[ \"$DRY_RUN\" != \"true\" ]]; then\n                log_warning \"Rolling back due to failed health checks\"\n                rollback_deployment\n                exit 1\n            fi\n        fi\n        \n        log_success \"Deployment and health checks completed successfully\"\n    else\n        log_error \"Deployment failed\"\n        \n        if [[ \"$ROLLBACK_ON_FAILURE\" == \"true\" ]] && [[ \"$DRY_RUN\" != \"true\" ]]; then\n            log_warning \"Rolling back due to deployment failure\"\n            rollback_deployment\n        fi\n        \n        exit 1\n    fi\n}\n\n# Parse command line arguments\nCOMMAND=\"deploy\"\nIMAGE_TAG=\"${AGENTSCAN_IMAGE_TAG:-latest}\"\nCONFIG_FILE=\"${AGENTSCAN_CONFIG_FILE:-}\"\n\nwhile [[ $# -gt 0 ]]; do\n    case $1 in\n        deploy|status|rollback|health|logs|cleanup|validate)\n            COMMAND=\"$1\"\n            shift\n            ;;\n        --environment)\n            ENVIRONMENT=\"$2\"\n            shift 2\n            ;;\n        --platform)\n            PLATFORM=\"$2\"\n            shift 2\n            ;;\n        --namespace)\n            NAMESPACE=\"$2\"\n            shift 2\n            ;;\n        --image-tag)\n            IMAGE_TAG=\"$2\"\n            shift 2\n            ;;\n        --config-file)\n            CONFIG_FILE=\"$2\"\n            shift 2\n            ;;\n        --dry-run)\n            DRY_RUN=true\n            shift\n            ;;\n        --verbose)\n            VERBOSE=true\n            shift\n            ;;\n        --skip-health-checks)\n            SKIP_HEALTH_CHECKS=true\n            shift\n            ;;\n        --skip-prerequisites)\n            SKIP_PREREQUISITES=true\n            shift\n            ;;\n        --force)\n            FORCE_DEPLOY=true\n            shift\n            ;;\n        --no-rollback)\n            ROLLBACK_ON_FAILURE=false\n            shift\n            ;;\n        --timeout)\n            DEPLOYMENT_TIMEOUT=\"$2\"\n            shift 2\n            ;;\n        --health-timeout)\n            HEALTH_CHECK_TIMEOUT=\"$2\"\n            shift 2\n            ;;\n        --help|-h)\n            show_help\n            exit 0\n            ;;\n        *)\n            # Handle rollback version argument\n            if [[ \"$COMMAND\" == \"rollback\" ]] && [[ -z \"${ROLLBACK_VERSION:-}\" ]]; then\n                ROLLBACK_VERSION=\"$1\"\n                shift\n            else\n                log_error \"Unknown option: $1\"\n                show_help\n                exit 1\n            fi\n            ;;\n    esac\ndone\n\n# Execute command\ncase \"$COMMAND\" in\n    \"deploy\")\n        main_deploy\n        ;;\n    \"status\")\n        show_status\n        ;;\n    \"rollback\")\n        rollback_deployment \"${ROLLBACK_VERSION:-}\"\n        ;;\n    \"health\")\n        perform_health_checks\n        ;;\n    \"logs\")\n        show_logs \"${2:-api}\" \"${3:-100}\"\n        ;;\n    \"cleanup\")\n        cleanup_deployments\n        ;;\n    \"validate\")\n        validate_prerequisites\n        validate_environment\n        validate_config\n        log_success \"All validations passed\"\n        ;;\n    *)\n        log_error \"Unknown command: $COMMAND\"\n        show_help\n        exit 1\n        ;;\nesac"
+#!/bin/bash
+
+# AgentScan Production Deployment Script
+# This script deploys the AgentScan application to production environments
+
+set -euo pipefail
+
+# Configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+DEPLOYMENT_DIR="$PROJECT_ROOT/deployment"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Logging functions
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Check if command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Validate prerequisites
+validate_prerequisites() {
+    log_info "Validating prerequisites..."
+    
+    local missing_tools=()
+    
+    # Check required tools
+    if ! command_exists "fly"; then
+        missing_tools+=("fly (Fly.io CLI)")
+    fi
+    
+    if ! command_exists "vercel"; then
+        missing_tools+=("vercel (Vercel CLI)")
+    fi
+    
+    if ! command_exists "docker"; then
+        missing_tools+=("docker")
+    fi
+    
+    if ! command_exists "git"; then
+        missing_tools+=("git")
+    fi
+    
+    if [ ${#missing_tools[@]} -ne 0 ]; then
+        log_error "Missing required tools:"
+        for tool in "${missing_tools[@]}"; do
+            echo "  - $tool"
+        done
+        exit 1
+    fi
+    
+    # Check if we're in the right directory
+    if [ ! -f "$PROJECT_ROOT/go.mod" ]; then
+        log_error "Not in AgentScan project root directory"
+        exit 1
+    fi
+    
+    # Check if we're on the main branch
+    local current_branch=$(git branch --show-current)
+    if [ "$current_branch" != "main" ]; then
+        log_warning "Not on main branch (current: $current_branch)"
+        read -p "Continue anyway? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    fi
+    
+    # Check for uncommitted changes
+    if ! git diff-index --quiet HEAD --; then
+        log_warning "Uncommitted changes detected"
+        read -p "Continue anyway? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    fi
+    
+    log_success "Prerequisites validated"
+}
+
+# Validate environment variables
+validate_environment() {
+    log_info "Validating environment variables..."
+    
+    local required_vars=(
+        "DATABASE_URL"
+        "REDIS_URL"
+        "SUPABASE_URL"
+        "SUPABASE_SERVICE_ROLE_KEY"
+        "JWT_SECRET"
+    )
+    
+    local missing_vars=()
+    
+    for var in "${required_vars[@]}"; do
+        if [ -z "${!var:-}" ]; then
+            missing_vars+=("$var")
+        fi
+    done
+    
+    if [ ${#missing_vars[@]} -ne 0 ]; then
+        log_error "Missing required environment variables:"
+        for var in "${missing_vars[@]}"; do
+            echo "  - $var"
+        done
+        echo
+        echo "Please set these variables or use the --set-secrets flag to set them interactively."
+        exit 1
+    fi
+    
+    # Validate JWT secret length
+    if [ ${#JWT_SECRET} -lt 32 ]; then
+        log_error "JWT_SECRET must be at least 32 characters long"
+        exit 1
+    fi
+    
+    log_success "Environment variables validated"
+}
+
+# Set Fly.io secrets
+set_fly_secrets() {
+    log_info "Setting Fly.io secrets..."
+    
+    fly secrets set \
+        DATABASE_URL="$DATABASE_URL" \
+        REDIS_URL="$REDIS_URL" \
+        SUPABASE_URL="$SUPABASE_URL" \
+        SUPABASE_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY" \
+        JWT_SECRET="$JWT_SECRET" \
+        --app agentscan-prod
+    
+    log_success "Fly.io secrets set"
+}
+
+# Deploy backend to Fly.io
+deploy_backend() {
+    log_info "Deploying backend to Fly.io..."
+    
+    cd "$PROJECT_ROOT"
+    
+    # Check if app exists
+    if ! fly apps list | grep -q "agentscan-prod"; then
+        log_info "Creating Fly.io app..."
+        fly apps create agentscan-prod --org personal
+    fi
+    
+    # Deploy the application
+    fly deploy --config "$DEPLOYMENT_DIR/production/fly.toml" --dockerfile "$DEPLOYMENT_DIR/production/Dockerfile"
+    
+    # Wait for deployment to be ready
+    log_info "Waiting for deployment to be ready..."
+    fly status --app agentscan-prod
+    
+    # Run health check
+    log_info "Running health check..."
+    local health_url="https://agentscan-prod.fly.dev/health"
+    local max_attempts=30
+    local attempt=1
+    
+    while [ $attempt -le $max_attempts ]; do
+        if curl -f -s "$health_url" > /dev/null; then
+            log_success "Backend health check passed"
+            break
+        fi
+        
+        log_info "Health check attempt $attempt/$max_attempts failed, retrying in 10s..."
+        sleep 10
+        ((attempt++))
+    done
+    
+    if [ $attempt -gt $max_attempts ]; then
+        log_error "Backend health check failed after $max_attempts attempts"
+        exit 1
+    fi
+    
+    log_success "Backend deployed successfully to Fly.io"
+}
+
+# Deploy frontend to Vercel
+deploy_frontend() {
+    log_info "Deploying frontend to Vercel..."
+    
+    cd "$PROJECT_ROOT/web/frontend"
+    
+    # Install dependencies
+    log_info "Installing frontend dependencies..."
+    npm ci
+    
+    # Build the application
+    log_info "Building frontend application..."
+    npm run build
+    
+    # Deploy to Vercel
+    log_info "Deploying to Vercel..."
+    vercel --prod --yes
+    
+    log_success "Frontend deployed successfully to Vercel"
+}
+
+# Setup monitoring and alerting
+setup_monitoring() {
+    log_info "Setting up monitoring and alerting..."
+    
+    # Create monitoring configuration
+    cat > "$DEPLOYMENT_DIR/production/monitoring.yml" << EOF
+# Monitoring configuration for AgentScan production
+version: '3.8'
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-storage:/var/lib/grafana
+
+volumes:
+  grafana-storage:
+EOF
+    
+    # Create Prometheus configuration
+    cat > "$DEPLOYMENT_DIR/production/prometheus.yml" << EOF
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'agentscan-api'
+    static_configs:
+      - targets: ['agentscan-prod.fly.dev:9090']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'fly-metrics'
+    static_configs:
+      - targets: ['fly.io:443']
+    scheme: https
+    metrics_path: '/v1/apps/agentscan-prod/metrics'
+EOF
+    
+    log_success "Monitoring configuration created"
+}
+
+# Run smoke tests
+run_smoke_tests() {
+    log_info "Running smoke tests..."
+    
+    local api_url="https://agentscan-prod.fly.dev"
+    local frontend_url="https://agentscan.vercel.app"
+    
+    # Test API endpoints
+    log_info "Testing API endpoints..."
+    
+    # Health check
+    if ! curl -f -s "$api_url/health" > /dev/null; then
+        log_error "API health check failed"
+        return 1
+    fi
+    
+    # Readiness check
+    if ! curl -f -s "$api_url/ready" > /dev/null; then
+        log_error "API readiness check failed"
+        return 1
+    fi
+    
+    # Metrics endpoint
+    if ! curl -f -s "$api_url/metrics" > /dev/null; then
+        log_error "API metrics endpoint failed"
+        return 1
+    fi
+    
+    # Test frontend
+    log_info "Testing frontend..."
+    
+    if ! curl -f -s "$frontend_url" > /dev/null; then
+        log_error "Frontend health check failed"
+        return 1
+    fi
+    
+    log_success "Smoke tests passed"
+}
+
+# Rollback deployment
+rollback_deployment() {
+    log_warning "Rolling back deployment..."
+    
+    # Rollback Fly.io deployment
+    fly releases list --app agentscan-prod
+    read -p "Enter release version to rollback to: " rollback_version
+    
+    if [ -n "$rollback_version" ]; then
+        fly releases rollback "$rollback_version" --app agentscan-prod
+        log_success "Backend rolled back to version $rollback_version"
+    fi
+    
+    # Rollback Vercel deployment
+    cd "$PROJECT_ROOT/web/frontend"
+    vercel rollback
+    
+    log_success "Deployment rolled back"
+}
+
+# Main deployment function
+deploy() {
+    local skip_validation=false
+    local set_secrets=false
+    local skip_frontend=false
+    local skip_backend=false
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --skip-validation)
+                skip_validation=true
+                shift
+                ;;
+            --set-secrets)
+                set_secrets=true
+                shift
+                ;;
+            --skip-frontend)
+                skip_frontend=true
+                shift
+                ;;
+            --skip-backend)
+                skip_backend=true
+                shift
+                ;;
+            --rollback)
+                rollback_deployment
+                exit 0
+                ;;
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                show_help
+                exit 1
+                ;;
+        esac
+    done
+    
+    log_info "Starting AgentScan production deployment..."
+    
+    # Validation
+    if [ "$skip_validation" = false ]; then
+        validate_prerequisites
+        validate_environment
+    fi
+    
+    # Set secrets if requested
+    if [ "$set_secrets" = true ]; then
+        set_fly_secrets
+    fi
+    
+    # Deploy backend
+    if [ "$skip_backend" = false ]; then
+        deploy_backend
+    fi
+    
+    # Deploy frontend
+    if [ "$skip_frontend" = false ]; then
+        deploy_frontend
+    fi
+    
+    # Setup monitoring
+    setup_monitoring
+    
+    # Run smoke tests
+    run_smoke_tests
+    
+    log_success "Production deployment completed successfully!"
+    log_info "Backend URL: https://agentscan-prod.fly.dev"
+    log_info "Frontend URL: https://agentscan.vercel.app"
+    log_info "Metrics URL: https://agentscan-prod.fly.dev/metrics"
+}
+
+# Show help
+show_help() {
+    cat << EOF
+AgentScan Production Deployment Script
+
+Usage: $0 [OPTIONS]
+
+Options:
+    --skip-validation    Skip prerequisite and environment validation
+    --set-secrets       Set Fly.io secrets interactively
+    --skip-frontend     Skip frontend deployment
+    --skip-backend      Skip backend deployment
+    --rollback          Rollback to previous deployment
+    -h, --help          Show this help message
+
+Environment Variables:
+    DATABASE_URL                PostgreSQL connection string
+    REDIS_URL                  Redis connection string
+    SUPABASE_URL               Supabase project URL
+    SUPABASE_SERVICE_ROLE_KEY  Supabase service role key
+    JWT_SECRET                 JWT signing secret (32+ characters)
+
+Examples:
+    $0                         # Full deployment with validation
+    $0 --skip-validation       # Deploy without validation
+    $0 --set-secrets          # Set secrets and deploy
+    $0 --skip-frontend        # Deploy backend only
+    $0 --rollback             # Rollback deployment
+
+EOF
+}
+
+# Script entry point
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+    deploy "$@"
+fi

@@ -1,0 +1,270 @@
+# Production Alerting Rules for AgentScan
+# This file defines critical alerts for production monitoring
+
+groups:
+  - name: agentscan.critical
+    rules:
+      # Application Health Alerts
+      - alert: ApplicationDown
+        expr: up{job="agentscan-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: agentscan-api
+        annotations:
+          summary: "AgentScan API is down"
+          description: "The AgentScan API has been down for more than 1 minute."
+          runbook_url: "https://docs.agentscan.com/runbooks/application-down"
+
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          service: agentscan-api
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} for the last 5 minutes."
+          runbook_url: "https://docs.agentscan.com/runbooks/high-error-rate"
+
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 3m
+        labels:
+          severity: warning
+          service: agentscan-api
+        annotations:
+          summary: "High response time detected"
+          description: "95th percentile response time is {{ $value }}s for the last 5 minutes."
+          runbook_url: "https://docs.agentscan.com/runbooks/high-response-time"
+
+      # Database Alerts
+      - alert: DatabaseConnectionFailure
+        expr: agentscan_database_connections_failed_total > 0
+        for: 1m
+        labels:
+          severity: critical
+          service: database
+        annotations:
+          summary: "Database connection failures detected"
+          description: "{{ $value }} database connection failures in the last minute."
+          runbook_url: "https://docs.agentscan.com/runbooks/database-connection-failure"
+
+      - alert: DatabaseHighConnections
+        expr: agentscan_database_connections_active / agentscan_database_connections_max > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: database
+        annotations:
+          summary: "High database connection usage"
+          description: "Database connection usage is {{ $value | humanizePercentage }}."
+          runbook_url: "https://docs.agentscan.com/runbooks/high-database-connections"
+
+      - alert: DatabaseSlowQueries
+        expr: rate(agentscan_database_query_duration_seconds_sum[5m]) / rate(agentscan_database_query_duration_seconds_count[5m]) > 1
+        for: 3m
+        labels:
+          severity: warning
+          service: database
+        annotations:
+          summary: "Slow database queries detected"
+          description: "Average query time is {{ $value }}s for the last 5 minutes."
+          runbook_url: "https://docs.agentscan.com/runbooks/slow-database-queries"
+
+      # Redis Alerts
+      - alert: RedisConnectionFailure
+        expr: agentscan_redis_connections_failed_total > 0
+        for: 1m
+        labels:
+          severity: critical
+          service: redis
+        annotations:
+          summary: "Redis connection failures detected"
+          description: "{{ $value }} Redis connection failures in the last minute."
+          runbook_url: "https://docs.agentscan.com/runbooks/redis-connection-failure"
+
+      - alert: RedisHighMemoryUsage
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          service: redis
+        annotations:
+          summary: "High Redis memory usage"
+          description: "Redis memory usage is {{ $value | humanizePercentage }}."
+          runbook_url: "https://docs.agentscan.com/runbooks/high-redis-memory"
+
+      # System Resource Alerts
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          service: system
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is {{ $value }}% on {{ $labels.instance }}."
+          runbook_url: "https://docs.agentscan.com/runbooks/high-cpu-usage"
+
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          service: system
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is {{ $value }}% on {{ $labels.instance }}."
+          runbook_url: "https://docs.agentscan.com/runbooks/high-memory-usage"
+
+      - alert: DiskSpaceLow
+        expr: (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          service: system
+        annotations:
+          summary: "Low disk space detected"
+          description: "Disk usage is {{ $value }}% on {{ $labels.instance }} ({{ $labels.mountpoint }})."
+          runbook_url: "https://docs.agentscan.com/runbooks/low-disk-space"
+
+      # Business Logic Alerts
+      - alert: HighScanFailureRate
+        expr: rate(agentscan_scans_failed_total[10m]) / rate(agentscan_scans_total[10m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: agentscan-business
+        annotations:
+          summary: "High scan failure rate detected"
+          description: "Scan failure rate is {{ $value | humanizePercentage }} for the last 10 minutes."
+          runbook_url: "https://docs.agentscan.com/runbooks/high-scan-failure-rate"
+
+      - alert: NoScansProcessed
+        expr: rate(agentscan_scans_total[30m]) == 0
+        for: 15m
+        labels:
+          severity: warning
+          service: agentscan-business
+        annotations:
+          summary: "No scans processed recently"
+          description: "No scans have been processed in the last 30 minutes."
+          runbook_url: "https://docs.agentscan.com/runbooks/no-scans-processed"
+
+      - alert: LongRunningScan
+        expr: agentscan_scan_duration_seconds > 3600
+        for: 0m
+        labels:
+          severity: warning
+          service: agentscan-business
+        annotations:
+          summary: "Long running scan detected"
+          description: "Scan {{ $labels.scan_id }} has been running for {{ $value | humanizeDuration }}."
+          runbook_url: "https://docs.agentscan.com/runbooks/long-running-scan"
+
+      # Security Alerts
+      - alert: HighAuthenticationFailureRate
+        expr: rate(agentscan_auth_failures_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+          service: security
+        annotations:
+          summary: "High authentication failure rate"
+          description: "{{ $value }} authentication failures per second for the last 5 minutes."
+          runbook_url: "https://docs.agentscan.com/runbooks/high-auth-failure-rate"
+
+      - alert: RateLimitExceeded
+        expr: rate(agentscan_rate_limit_exceeded_total[5m]) > 5
+        for: 2m
+        labels:
+          severity: warning
+          service: security
+        annotations:
+          summary: "Rate limit frequently exceeded"
+          description: "Rate limit exceeded {{ $value }} times per second for the last 5 minutes."
+          runbook_url: "https://docs.agentscan.com/runbooks/rate-limit-exceeded"
+
+      - alert: SuspiciousActivity
+        expr: rate(agentscan_security_events_total{event_type="suspicious_activity"}[5m]) > 1
+        for: 1m
+        labels:
+          severity: critical
+          service: security
+        annotations:
+          summary: "Suspicious activity detected"
+          description: "{{ $value }} suspicious activities detected per second."
+          runbook_url: "https://docs.agentscan.com/runbooks/suspicious-activity"
+
+  - name: agentscan.infrastructure
+    rules:
+      # SSL Certificate Alerts
+      - alert: SSLCertificateExpiringSoon
+        expr: probe_ssl_earliest_cert_expiry - time() < 86400 * 30
+        for: 1h
+        labels:
+          severity: warning
+          service: ssl
+        annotations:
+          summary: "SSL certificate expiring soon"
+          description: "SSL certificate for {{ $labels.instance }} expires in {{ $value | humanizeDuration }}."
+          runbook_url: "https://docs.agentscan.com/runbooks/ssl-certificate-expiring"
+
+      - alert: SSLCertificateExpired
+        expr: probe_ssl_earliest_cert_expiry - time() < 0
+        for: 0m
+        labels:
+          severity: critical
+          service: ssl
+        annotations:
+          summary: "SSL certificate expired"
+          description: "SSL certificate for {{ $labels.instance }} has expired."
+          runbook_url: "https://docs.agentscan.com/runbooks/ssl-certificate-expired"
+
+      # External Service Alerts
+      - alert: ExternalServiceDown
+        expr: probe_success == 0
+        for: 2m
+        labels:
+          severity: warning
+          service: external
+        annotations:
+          summary: "External service is down"
+          description: "External service {{ $labels.instance }} is not responding."
+          runbook_url: "https://docs.agentscan.com/runbooks/external-service-down"
+
+      # Backup Alerts
+      - alert: BackupFailed
+        expr: agentscan_backup_last_success_timestamp < time() - 86400 * 2
+        for: 1h
+        labels:
+          severity: warning
+          service: backup
+        annotations:
+          summary: "Backup has not succeeded recently"
+          description: "Last successful backup was {{ $value | humanizeTimestamp }}."
+          runbook_url: "https://docs.agentscan.com/runbooks/backup-failed"
+
+      # Log Alerts
+      - alert: HighErrorLogRate
+        expr: rate(agentscan_log_entries_total{level="error"}[5m]) > 1
+        for: 3m
+        labels:
+          severity: warning
+          service: logging
+        annotations:
+          summary: "High error log rate"
+          description: "{{ $value }} error log entries per second for the last 5 minutes."
+          runbook_url: "https://docs.agentscan.com/runbooks/high-error-log-rate"
+
+      - alert: CriticalLogEntry
+        expr: increase(agentscan_log_entries_total{level="fatal"}[1m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          service: logging
+        annotations:
+          summary: "Critical log entry detected"
+          description: "{{ $value }} critical log entries in the last minute."
+          runbook_url: "https://docs.agentscan.com/runbooks/critical-log-entry"

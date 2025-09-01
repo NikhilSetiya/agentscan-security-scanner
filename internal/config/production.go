@@ -3,390 +3,349 @@ package config
 import (
 	"fmt"
 	"os"
-	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
 
-// ProductionConfig holds production-specific configuration
-type ProductionConfig struct {
-	// Application settings
-	App AppConfig `json:"app"`
+// LoadProductionConfig loads configuration specifically for production environment
+func LoadProductionConfig() (*Config, error) {
+	config := &Config{}
 	
-	// Server settings
-	Server ServerConfig `json:"server"`
+	// Load application configuration
+	config.App = AppConfig{
+		Name:        getEnvOrDefault("APP_NAME", "AgentScan"),
+		Version:     getEnvOrDefault("APP_VERSION", "1.0.0"),
+		Environment: "production",
+		Debug:       false, // Always false in production
+	}
 	
-	// Database settings
-	Database DatabaseConfig `json:"database"`
+	// Load server configuration
+	port, err := strconv.Atoi(getEnvOrDefault("PORT", "8080"))
+	if err != nil {
+		return nil, fmt.Errorf("invalid PORT: %w", err)
+	}
 	
-	// Redis settings
-	Redis RedisConfig `json:"redis"`
+	config.Server = ServerConfig{
+		Host:            getEnvOrDefault("HOST", "0.0.0.0"),
+		Port:            port,
+		ReadTimeout:     parseDurationOrDefault("READ_TIMEOUT", 30*time.Second),
+		WriteTimeout:    parseDurationOrDefault("WRITE_TIMEOUT", 30*time.Second),
+		IdleTimeout:     parseDurationOrDefault("IDLE_TIMEOUT", 60*time.Second),
+		ShutdownTimeout: parseDurationOrDefault("SHUTDOWN_TIMEOUT", 10*time.Second),
+	}
 	
-	// Security settings
-	Security *SecurityConfig `json:"security"`
+	// Load database configuration
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		return nil, fmt.Errorf("DATABASE_URL is required in production")
+	}
 	
-	// Logging settings
-	Logging LoggingConfig `json:"logging"`
+	config.Database = DatabaseConfig{
+		URL:             databaseURL,
+		MaxOpenConns:    parseIntOrDefault("DATABASE_MAX_OPEN_CONNS", 25),
+		MaxIdleConns:    parseIntOrDefault("DATABASE_MAX_IDLE_CONNS", 10),
+		ConnMaxLifetime: parseDurationOrDefault("DATABASE_CONN_MAX_LIFETIME", 5*time.Minute),
+		ConnMaxIdleTime: parseDurationOrDefault("DATABASE_CONN_MAX_IDLE_TIME", 5*time.Minute),
+	}
 	
-	// Monitoring settings
-	Monitoring MonitoringConfig `json:"monitoring"`
+	// Load Redis configuration
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		return nil, fmt.Errorf("REDIS_URL is required in production")
+	}
 	
-	// Performance settings
-	Performance PerformanceConfig `json:"performance"`
+	config.Redis = RedisConfig{
+		URL:         redisURL,
+		MaxRetries:  parseIntOrDefault("REDIS_MAX_RETRIES", 3),
+		PoolSize:    parseIntOrDefault("REDIS_POOL_SIZE", 10),
+		PoolTimeout: parseDurationOrDefault("REDIS_POOL_TIMEOUT", 4*time.Second),
+	}
 	
-	// External services
-	External ExternalConfig `json:"external"`
-}
-
-type AppConfig struct {
-	Name        string `json:"name"`
-	Version     string `json:"version"`
-	Environment string `json:"environment"`
-	Debug       bool   `json:"debug"`
-}
-
-type ServerConfig struct {
-	Host            string        `json:"host"`
-	Port            int           `json:"port"`
-	ReadTimeout     time.Duration `json:"read_timeout"`
-	WriteTimeout    time.Duration `json:"write_timeout"`
-	IdleTimeout     time.Duration `json:"idle_timeout"`
-	ShutdownTimeout time.Duration `json:"shutdown_timeout"`
-}
-
-type DatabaseConfig struct {
-	URL                string        `json:"url"`
-	MaxOpenConns       int           `json:"max_open_conns"`
-	MaxIdleConns       int           `json:"max_idle_conns"`
-	ConnMaxLifetime    time.Duration `json:"conn_max_lifetime"`
-	ConnMaxIdleTime    time.Duration `json:"conn_max_idle_time"`
-	SSLMode            string        `json:"ssl_mode"`
-	MigrationsPath     string        `json:"migrations_path"`
-	QueryTimeout       time.Duration `json:"query_timeout"`
-	SlowQueryThreshold time.Duration `json:"slow_query_threshold"`
-}
-
-type RedisConfig struct {
-	URL              string        `json:"url"`
-	Password         string        `json:"-"` // Never serialize passwords
-	MaxRetries       int           `json:"max_retries"`
-	PoolSize         int           `json:"pool_size"`
-	MinIdleConns     int           `json:"min_idle_conns"`
-	PoolTimeout      time.Duration `json:"pool_timeout"`
-	IdleTimeout      time.Duration `json:"idle_timeout"`
-	ReadTimeout      time.Duration `json:"read_timeout"`
-	WriteTimeout     time.Duration `json:"write_timeout"`
-}
-
-type LoggingConfig struct {
-	Level       string `json:"level"`
-	Format      string `json:"format"`
-	Output      string `json:"output"`
-	FilePath    string `json:"file_path"`
-	MaxSize     int    `json:"max_size"`
-	MaxBackups  int    `json:"max_backups"`
-	MaxAge      int    `json:"max_age"`
-	Compress    bool   `json:"compress"`
-	EnableCaller bool  `json:"enable_caller"`
-}
-
-type MonitoringConfig struct {
-	Enabled         bool   `json:"enabled"`
-	MetricsEnabled  bool   `json:"metrics_enabled"`
-	MetricsPort     int    `json:"metrics_port"`
-	MetricsPath     string `json:"metrics_path"`
-	HealthEnabled   bool   `json:"health_enabled"`
-	HealthPath      string `json:"health_path"`
-	PprofEnabled    bool   `json:"pprof_enabled"`
-	TracingEnabled  bool   `json:"tracing_enabled"`
-	TracingEndpoint string `json:"tracing_endpoint"`
-}
-
-type PerformanceConfig struct {
-	CacheTTL              time.Duration `json:"cache_ttl"`
-	CacheCleanupInterval  time.Duration `json:"cache_cleanup_interval"`
-	MaxConcurrentScans    int           `json:"max_concurrent_scans"`
-	ScanTimeout           time.Duration `json:"scan_timeout"`
-	WorkerConcurrency     int           `json:"worker_concurrency"`
-	WorkerQueueSize       int           `json:"worker_queue_size"`
-	JobTimeout            time.Duration `json:"job_timeout"`
-	JobRetryAttempts      int           `json:"job_retry_attempts"`
-	JobRetryDelay         time.Duration `json:"job_retry_delay"`
-}
-
-type ExternalConfig struct {
-	Supabase SupabaseConfig `json:"supabase"`
-	GitHub   GitHubConfig   `json:"github"`
-	SMTP     SMTPConfig     `json:"smtp"`
-	Storage  StorageConfig  `json:"storage"`
-}
-
-type SupabaseConfig struct {
-	URL            string `json:"url"`
-	ServiceRoleKey string `json:"-"` // Never serialize keys
-	JWTSecret      string `json:"-"` // Never serialize secrets
-	DatabaseURL    string `json:"database_url"`
-}
-
-type GitHubConfig struct {
-	ClientID      string `json:"client_id"`
-	ClientSecret  string `json:"-"` // Never serialize secrets
-	WebhookSecret string `json:"-"` // Never serialize secrets
-}
-
-type SMTPConfig struct {
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	Username string `json:"username"`
-	Password string `json:"-"` // Never serialize passwords
-	From     string `json:"from"`
-	TLS      bool   `json:"tls"`
-}
-
-type StorageConfig struct {
-	Type        string `json:"type"`
-	LocalPath   string `json:"local_path"`
-	MaxFileSize int64  `json:"max_file_size"`
-	S3Bucket    string `json:"s3_bucket"`
-	S3Region    string `json:"s3_region"`
-}
-
-// LoadProductionConfig loads production configuration from environment variables
-func LoadProductionConfig() (*ProductionConfig, error) {
-	config := &ProductionConfig{
-		App: AppConfig{
-			Name:        getEnvString("APP_NAME", "AgentScan Security Scanner"),
-			Version:     getEnvString("APP_VERSION", "1.0.0"),
-			Environment: getEnvString("GO_ENV", "production"),
-			Debug:       getEnvBool("APP_DEBUG", false),
+	// Load security configuration
+	config.Security = &SecurityConfig{}
+	
+	// JWT configuration
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		return nil, fmt.Errorf("JWT_SECRET is required in production")
+	}
+	if len(jwtSecret) < 32 {
+		return nil, fmt.Errorf("JWT_SECRET must be at least 32 characters in production")
+	}
+	
+	config.Security.JWT = JWTConfig{
+		Secret:    jwtSecret,
+		Algorithm: getEnvOrDefault("JWT_ALGORITHM", "HS256"),
+		Issuer:    getEnvOrDefault("JWT_ISSUER", "agentscan-prod"),
+		Audience:  getEnvOrDefault("JWT_AUDIENCE", "agentscan-api"),
+		TTL:       parseDurationOrDefault("JWT_TTL", 24*time.Hour),
+	}
+	
+	// HTTPS configuration
+	config.Security.HTTPS = HTTPSConfig{
+		Enabled:      parseBoolOrDefault("HTTPS_ENABLED", true),
+		CertFile:     os.Getenv("HTTPS_CERT_FILE"),
+		KeyFile:      os.Getenv("HTTPS_KEY_FILE"),
+		RedirectHTTP: parseBoolOrDefault("HTTPS_REDIRECT_HTTP", true),
+	}
+	
+	// CORS configuration
+	corsOrigins := os.Getenv("CORS_ALLOWED_ORIGINS")
+	var allowedOrigins []string
+	if corsOrigins != "" {
+		allowedOrigins = strings.Split(corsOrigins, ",")
+		for i, origin := range allowedOrigins {
+			allowedOrigins[i] = strings.TrimSpace(origin)
+		}
+	}
+	
+	config.Security.CORS = CORSConfig{
+		Enabled:        parseBoolOrDefault("CORS_ENABLED", true),
+		AllowedOrigins: allowedOrigins,
+		AllowedMethods: strings.Split(getEnvOrDefault("CORS_ALLOWED_METHODS", "GET,POST,PUT,DELETE,OPTIONS"), ","),
+		AllowedHeaders: strings.Split(getEnvOrDefault("CORS_ALLOWED_HEADERS", "Content-Type,Authorization,X-Requested-With"), ","),
+		ExposedHeaders: strings.Split(getEnvOrDefault("CORS_EXPOSED_HEADERS", "X-Total-Count"), ","),
+		AllowCredentials: parseBoolOrDefault("CORS_ALLOW_CREDENTIALS", true),
+		MaxAge:         parseIntOrDefault("CORS_MAX_AGE", 3600),
+	}
+	
+	// Security headers configuration
+	config.Security.Headers = SecurityHeaders{
+		Enabled: parseBoolOrDefault("SECURITY_HEADERS_ENABLED", true),
+		HSTS: HSTSConfig{
+			Enabled:           parseBoolOrDefault("HSTS_ENABLED", true),
+			MaxAge:            parseIntOrDefault("HSTS_MAX_AGE", 31536000),
+			IncludeSubdomains: parseBoolOrDefault("HSTS_INCLUDE_SUBDOMAINS", true),
+			Preload:           parseBoolOrDefault("HSTS_PRELOAD", true),
 		},
-		Server: ServerConfig{
-			Host:            getEnvString("HOST", "0.0.0.0"),
-			Port:            getEnvInt("PORT", 8080),
-			ReadTimeout:     getEnvDuration("READ_TIMEOUT", 30*time.Second),
-			WriteTimeout:    getEnvDuration("WRITE_TIMEOUT", 30*time.Second),
-			IdleTimeout:     getEnvDuration("IDLE_TIMEOUT", 60*time.Second),
-			ShutdownTimeout: getEnvDuration("SHUTDOWN_TIMEOUT", 30*time.Second),
-		},
-		Database: DatabaseConfig{
-			URL:                getEnvString("DATABASE_URL", ""),
-			MaxOpenConns:       getEnvInt("DATABASE_MAX_OPEN_CONNS", 25),
-			MaxIdleConns:       getEnvInt("DATABASE_MAX_IDLE_CONNS", 5),
-			ConnMaxLifetime:    getEnvDuration("DATABASE_CONN_MAX_LIFETIME", 5*time.Minute),
-			ConnMaxIdleTime:    getEnvDuration("DATABASE_CONN_MAX_IDLE_TIME", 5*time.Minute),
-			SSLMode:            getEnvString("DATABASE_SSL_MODE", "require"),
-			MigrationsPath:     getEnvString("DATABASE_MIGRATIONS_PATH", "migrations"),
-			QueryTimeout:       getEnvDuration("DATABASE_QUERY_TIMEOUT", 30*time.Second),
-			SlowQueryThreshold: getEnvDuration("DATABASE_SLOW_QUERY_THRESHOLD", 1*time.Second),
-		},
-		Redis: RedisConfig{
-			URL:          getEnvString("REDIS_URL", "redis://localhost:6379/0"),
-			Password:     getEnvString("REDIS_PASSWORD", ""),
-			MaxRetries:   getEnvInt("REDIS_MAX_RETRIES", 3),
-			PoolSize:     getEnvInt("REDIS_POOL_SIZE", 10),
-			MinIdleConns: getEnvInt("REDIS_MIN_IDLE_CONNS", 5),
-			PoolTimeout:  getEnvDuration("REDIS_POOL_TIMEOUT", 4*time.Second),
-			IdleTimeout:  getEnvDuration("REDIS_IDLE_TIMEOUT", 5*time.Minute),
-			ReadTimeout:  getEnvDuration("REDIS_READ_TIMEOUT", 3*time.Second),
-			WriteTimeout: getEnvDuration("REDIS_WRITE_TIMEOUT", 3*time.Second),
-		},
-		Security: LoadSecurityConfig(),
-		Logging: LoggingConfig{
-			Level:        getEnvString("LOG_LEVEL", "info"),
-			Format:       getEnvString("LOG_FORMAT", "json"),
-			Output:       getEnvString("LOG_OUTPUT", "stdout"),
-			FilePath:     getEnvString("LOG_FILE_PATH", "/var/log/agentscan/app.log"),
-			MaxSize:      getEnvInt("LOG_MAX_SIZE", 100),
-			MaxBackups:   getEnvInt("LOG_MAX_BACKUPS", 5),
-			MaxAge:       getEnvInt("LOG_MAX_AGE", 30),
-			Compress:     getEnvBool("LOG_COMPRESS", true),
-			EnableCaller: getEnvBool("LOG_ENABLE_CALLER", false),
-		},
-		Monitoring: MonitoringConfig{
-			Enabled:         getEnvBool("MONITORING_ENABLED", true),
-			MetricsEnabled:  getEnvBool("METRICS_ENABLED", true),
-			MetricsPort:     getEnvInt("METRICS_PORT", 9090),
-			MetricsPath:     getEnvString("METRICS_PATH", "/metrics"),
-			HealthEnabled:   getEnvBool("HEALTH_CHECK_ENABLED", true),
-			HealthPath:      getEnvString("HEALTH_CHECK_PATH", "/health"),
-			PprofEnabled:    getEnvBool("PPROF_ENABLED", false),
-			TracingEnabled:  getEnvBool("TRACING_ENABLED", false),
-			TracingEndpoint: getEnvString("TRACING_ENDPOINT", ""),
-		},
-		Performance: PerformanceConfig{
-			CacheTTL:              getEnvDuration("CACHE_TTL", time.Hour),
-			CacheCleanupInterval:  getEnvDuration("CACHE_CLEANUP_INTERVAL", 10*time.Minute),
-			MaxConcurrentScans:    getEnvInt("MAX_CONCURRENT_SCANS", 5),
-			ScanTimeout:           getEnvDuration("SCAN_TIMEOUT", 10*time.Minute),
-			WorkerConcurrency:     getEnvInt("WORKER_CONCURRENCY", 10),
-			WorkerQueueSize:       getEnvInt("WORKER_QUEUE_SIZE", 1000),
-			JobTimeout:            getEnvDuration("JOB_TIMEOUT", 5*time.Minute),
-			JobRetryAttempts:      getEnvInt("JOB_RETRY_ATTEMPTS", 3),
-			JobRetryDelay:         getEnvDuration("JOB_RETRY_DELAY", 30*time.Second),
-		},
-		External: ExternalConfig{
-			Supabase: SupabaseConfig{
-				URL:            getEnvString("SUPABASE_URL", ""),
-				ServiceRoleKey: getEnvString("SUPABASE_SERVICE_ROLE_KEY", ""),
-				JWTSecret:      getEnvString("SUPABASE_JWT_SECRET", ""),
-				DatabaseURL:    getEnvString("SUPABASE_DB_URL", ""),
-			},
-			GitHub: GitHubConfig{
-				ClientID:      getEnvString("GITHUB_CLIENT_ID", ""),
-				ClientSecret:  getEnvString("GITHUB_CLIENT_SECRET", ""),
-				WebhookSecret: getEnvString("GITHUB_WEBHOOK_SECRET", ""),
-			},
-			SMTP: SMTPConfig{
-				Host:     getEnvString("SMTP_HOST", ""),
-				Port:     getEnvInt("SMTP_PORT", 587),
-				Username: getEnvString("SMTP_USERNAME", ""),
-				Password: getEnvString("SMTP_PASSWORD", ""),
-				From:     getEnvString("SMTP_FROM", ""),
-				TLS:      getEnvBool("SMTP_TLS", true),
-			},
-			Storage: StorageConfig{
-				Type:        getEnvString("STORAGE_TYPE", "local"),
-				LocalPath:   getEnvString("STORAGE_LOCAL_PATH", "/var/lib/agentscan/uploads"),
-				MaxFileSize: getEnvInt64("STORAGE_MAX_FILE_SIZE", 10*1024*1024),
-				S3Bucket:    getEnvString("STORAGE_S3_BUCKET", ""),
-				S3Region:    getEnvString("STORAGE_S3_REGION", "us-east-1"),
-			},
+		CSP: CSPConfig{
+			Enabled:   parseBoolOrDefault("CSP_ENABLED", true),
+			Policy:    getEnvOrDefault("CSP_POLICY", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"),
+			ReportURI: getEnvOrDefault("CSP_REPORT_URI", "/csp-report"),
 		},
 	}
 	
-	// Validate configuration
-	if err := config.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid production configuration: %w", err)
+	// Rate limiting configuration
+	config.Security.RateLimit = RateLimitConfig{
+		Enabled:  parseBoolOrDefault("RATE_LIMIT_ENABLED", true),
+		Requests: parseIntOrDefault("RATE_LIMIT_REQUESTS", 1000),
+		Window:   parseDurationOrDefault("RATE_LIMIT_WINDOW", time.Hour),
+		Burst:    parseIntOrDefault("RATE_LIMIT_BURST", 100),
+	}
+	
+	// Load monitoring configuration
+	config.Monitoring = MonitoringConfig{
+		Enabled:      parseBoolOrDefault("METRICS_ENABLED", true),
+		MetricsPort:  parseIntOrDefault("METRICS_PORT", 9090),
+		MetricsPath:  getEnvOrDefault("METRICS_PATH", "/metrics"),
+		HealthCheck:  parseBoolOrDefault("HEALTH_CHECK_ENABLED", true),
+		PprofEnabled: parseBoolOrDefault("PPROF_ENABLED", false), // Disabled in production
+	}
+	
+	// Load logging configuration
+	config.Logging = LoggingConfig{
+		Level:  getEnvOrDefault("LOG_LEVEL", "info"),
+		Format: getEnvOrDefault("LOG_FORMAT", "json"),
+		Output: getEnvOrDefault("LOG_OUTPUT", "stdout"),
+	}
+	
+	// Load Supabase configuration
+	supabaseURL := os.Getenv("SUPABASE_URL")
+	if supabaseURL == "" {
+		return nil, fmt.Errorf("SUPABASE_URL is required in production")
+	}
+	
+	supabaseServiceRoleKey := os.Getenv("SUPABASE_SERVICE_ROLE_KEY")
+	if supabaseServiceRoleKey == "" {
+		return nil, fmt.Errorf("SUPABASE_SERVICE_ROLE_KEY is required in production")
+	}
+	
+	config.Supabase = SupabaseConfig{
+		URL:            supabaseURL,
+		ServiceRoleKey: supabaseServiceRoleKey,
+		AnonKey:        os.Getenv("SUPABASE_ANON_KEY"), // Optional for backend
+	}
+	
+	// Validate production configuration
+	if err := validateProductionConfig(config); err != nil {
+		return nil, fmt.Errorf("production configuration validation failed: %w", err)
 	}
 	
 	return config, nil
 }
 
-// Validate validates the production configuration
-func (pc *ProductionConfig) Validate() error {
-	// Validate required fields
-	if pc.Database.URL == "" {
-		return fmt.Errorf("DATABASE_URL is required")
+// validateProductionConfig performs production-specific validation
+func validateProductionConfig(config *Config) error {
+	// Ensure debug is disabled
+	if config.App.Debug {
+		return fmt.Errorf("debug mode must be disabled in production")
 	}
 	
-	if pc.External.Supabase.URL == "" {
-		return fmt.Errorf("SUPABASE_URL is required")
+	// Ensure HTTPS is enabled
+	if !config.Security.HTTPS.Enabled {
+		return fmt.Errorf("HTTPS must be enabled in production")
 	}
 	
-	if pc.External.Supabase.ServiceRoleKey == "" {
-		return fmt.Errorf("SUPABASE_SERVICE_ROLE_KEY is required")
+	// Ensure security headers are enabled
+	if !config.Security.Headers.Enabled {
+		return fmt.Errorf("security headers must be enabled in production")
 	}
 	
-	// Validate security configuration
-	if err := pc.Security.ValidateSecurityConfig(); err != nil {
-		return fmt.Errorf("security configuration invalid: %w", err)
+	// Ensure HSTS is enabled
+	if !config.Security.Headers.HSTS.Enabled {
+		return fmt.Errorf("HSTS must be enabled in production")
 	}
 	
-	// Validate server configuration
-	if pc.Server.Port <= 0 || pc.Server.Port > 65535 {
-		return fmt.Errorf("invalid server port: %d", pc.Server.Port)
+	// Ensure CSP is enabled
+	if !config.Security.Headers.CSP.Enabled {
+		return fmt.Errorf("CSP must be enabled in production")
 	}
 	
-	// Validate database configuration
-	if pc.Database.MaxOpenConns <= 0 {
-		return fmt.Errorf("database max open connections must be positive")
+	// Ensure rate limiting is enabled
+	if !config.Security.RateLimit.Enabled {
+		return fmt.Errorf("rate limiting must be enabled in production")
 	}
 	
-	// Validate performance configuration
-	if pc.Performance.MaxConcurrentScans <= 0 {
-		return fmt.Errorf("max concurrent scans must be positive")
+	// Ensure monitoring is enabled
+	if !config.Monitoring.Enabled {
+		return fmt.Errorf("monitoring must be enabled in production")
 	}
 	
-	return nil
-}
-
-// GetDatabaseConnectionString returns the database connection string with SSL mode
-func (pc *ProductionConfig) GetDatabaseConnectionString() string {
-	if strings.Contains(pc.Database.URL, "sslmode=") {
-		return pc.Database.URL
+	// Ensure pprof is disabled
+	if config.Monitoring.PprofEnabled {
+		return fmt.Errorf("pprof must be disabled in production")
 	}
 	
-	separator := "?"
-	if strings.Contains(pc.Database.URL, "?") {
-		separator = "&"
+	// Validate JWT secret strength
+	if len(config.Security.JWT.Secret) < 32 {
+		return fmt.Errorf("JWT secret must be at least 32 characters in production")
 	}
 	
-	return fmt.Sprintf("%s%ssslmode=%s", pc.Database.URL, separator, pc.Database.SSLMode)
-}
-
-// IsProductionReady checks if the configuration is ready for production
-func (pc *ProductionConfig) IsProductionReady() (bool, []string) {
-	var issues []string
-	
-	// Check HTTPS configuration
-	if !pc.Security.HTTPS.Enabled {
-		issues = append(issues, "HTTPS is not enabled")
+	// Validate database URL format
+	if !strings.Contains(config.Database.URL, "sslmode=require") && 
+	   !strings.Contains(config.Database.URL, "sslmode=verify-full") {
+		return fmt.Errorf("database must use SSL in production (sslmode=require or verify-full)")
 	}
 	
-	// Check if using default JWT secret
-	if len(pc.Security.JWT.Secret) < 32 {
-		issues = append(issues, "JWT secret is too short (minimum 32 characters)")
+	// Validate CORS origins
+	if len(config.Security.CORS.AllowedOrigins) == 0 {
+		return fmt.Errorf("CORS allowed origins must be specified in production")
 	}
 	
-	// Check if debug mode is disabled
-	if pc.App.Debug {
-		issues = append(issues, "Debug mode is enabled")
-	}
-	
-	// Check SSL mode for database
-	if pc.Database.SSLMode != "require" && pc.Database.SSLMode != "verify-full" {
-		issues = append(issues, "Database SSL mode should be 'require' or 'verify-full'")
-	}
-	
-	// Check if monitoring is enabled
-	if !pc.Monitoring.Enabled {
-		issues = append(issues, "Monitoring is not enabled")
-	}
-	
-	// Check if pprof is disabled in production
-	if pc.Monitoring.PprofEnabled {
-		issues = append(issues, "pprof should be disabled in production")
-	}
-	
-	// Check log level
-	if pc.Logging.Level == "debug" || pc.Logging.Level == "trace" {
-		issues = append(issues, "Log level should not be debug or trace in production")
-	}
-	
-	return len(issues) == 0, issues
-}
-
-// CreateDirectories creates necessary directories for the application
-func (pc *ProductionConfig) CreateDirectories() error {
-	directories := []string{}
-	
-	// Add log file directory
-	if pc.Logging.Output == "file" && pc.Logging.FilePath != "" {
-		directories = append(directories, filepath.Dir(pc.Logging.FilePath))
-	}
-	
-	// Add storage directory
-	if pc.External.Storage.Type == "local" && pc.External.Storage.LocalPath != "" {
-		directories = append(directories, pc.External.Storage.LocalPath)
-	}
-	
-	// Create directories
-	for _, dir := range directories {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("failed to create directory %s: %w", dir, err)
+	for _, origin := range config.Security.CORS.AllowedOrigins {
+		if origin == "*" {
+			return fmt.Errorf("wildcard CORS origin (*) is not allowed in production")
+		}
+		if !strings.HasPrefix(origin, "https://") {
+			return fmt.Errorf("all CORS origins must use HTTPS in production: %s", origin)
 		}
 	}
 	
 	return nil
 }
 
-// GetLogLevel returns the log level as a structured logging level
-func (pc *ProductionConfig) GetLogLevel() string {
-	level := strings.ToLower(pc.Logging.Level)
-	switch level {
-	case "trace", "debug", "info", "warn", "error", "fatal", "panic":
-		return level
-	default:
-		return "info"
+// Helper functions for parsing environment variables
+
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
 	}
+	return defaultValue
+}
+
+func parseIntOrDefault(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil {
+			return parsed
+		}
+	}
+	return defaultValue
+}
+
+func parseBoolOrDefault(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			return parsed
+		}
+	}
+	return defaultValue
+}
+
+func parseDurationOrDefault(key string, defaultValue time.Duration) time.Duration {
+	if value := os.Getenv(key); value != "" {
+		if parsed, err := time.ParseDuration(value); err == nil {
+			return parsed
+		}
+	}
+	return defaultValue
+}
+
+// GetProductionReadinessReport generates a report of production readiness
+func GetProductionReadinessReport() (bool, []string) {
+	var issues []string
+	
+	// Check required environment variables
+	requiredVars := []string{
+		"DATABASE_URL",
+		"REDIS_URL",
+		"SUPABASE_URL",
+		"SUPABASE_SERVICE_ROLE_KEY",
+		"JWT_SECRET",
+	}
+	
+	for _, varName := range requiredVars {
+		if os.Getenv(varName) == "" {
+			issues = append(issues, fmt.Sprintf("Missing required environment variable: %s", varName))
+		}
+	}
+	
+	// Check JWT secret strength
+	if jwtSecret := os.Getenv("JWT_SECRET"); jwtSecret != "" && len(jwtSecret) < 32 {
+		issues = append(issues, "JWT_SECRET must be at least 32 characters")
+	}
+	
+	// Check database SSL requirement
+	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+		if !strings.Contains(dbURL, "sslmode=require") && !strings.Contains(dbURL, "sslmode=verify-full") {
+			issues = append(issues, "Database must use SSL (sslmode=require or verify-full)")
+		}
+	}
+	
+	// Check CORS configuration
+	if corsOrigins := os.Getenv("CORS_ALLOWED_ORIGINS"); corsOrigins != "" {
+		origins := strings.Split(corsOrigins, ",")
+		for _, origin := range origins {
+			origin = strings.TrimSpace(origin)
+			if origin == "*" {
+				issues = append(issues, "Wildcard CORS origin (*) is not allowed in production")
+			}
+			if !strings.HasPrefix(origin, "https://") {
+				issues = append(issues, fmt.Sprintf("CORS origin must use HTTPS: %s", origin))
+			}
+		}
+	}
+	
+	// Check security settings
+	if !parseBoolOrDefault("HTTPS_ENABLED", true) {
+		issues = append(issues, "HTTPS must be enabled in production")
+	}
+	
+	if !parseBoolOrDefault("SECURITY_HEADERS_ENABLED", true) {
+		issues = append(issues, "Security headers must be enabled in production")
+	}
+	
+	if !parseBoolOrDefault("RATE_LIMIT_ENABLED", true) {
+		issues = append(issues, "Rate limiting must be enabled in production")
+	}
+	
+	if parseBoolOrDefault("DEBUG", false) {
+		issues = append(issues, "Debug mode must be disabled in production")
+	}
+	
+	if parseBoolOrDefault("PPROF_ENABLED", false) {
+		issues = append(issues, "Pprof must be disabled in production")
+	}
+	
+	return len(issues) == 0, issues
 }

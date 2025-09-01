@@ -1,0 +1,124 @@
+# Fly.io configuration for AgentScan production deployment
+app = "agentscan-prod"
+primary_region = "sjc"
+
+[build]
+  dockerfile = "deployment/production/Dockerfile"
+
+[env]
+  GO_ENV = "production"
+  PORT = "8080"
+  LOG_LEVEL = "info"
+  LOG_FORMAT = "json"
+  METRICS_ENABLED = "true"
+  HEALTH_CHECK_ENABLED = "true"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 2
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 1000
+    soft_limit = 800
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/health"
+    protocol = "http"
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "60s"
+    method = "GET"
+    timeout = "10s"
+    path = "/ready"
+    protocol = "http"
+
+[machine]
+  cpu_kind = "shared"
+  cpus = 2
+  memory = "2gb"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 2
+  memory = "2gb"
+  size = "shared-cpu-2x"
+
+[metrics]
+  port = 9090
+  path = "/metrics"
+
+# Database configuration (using Fly Postgres)
+[[services]]
+  internal_port = 5432
+  protocol = "tcp"
+
+  [[services.ports]]
+    port = 5432
+
+# Redis configuration (using Fly Redis)
+[[services]]
+  internal_port = 6379
+  protocol = "tcp"
+
+  [[services.ports]]
+    port = 6379
+
+# Secrets (set via fly secrets set)
+# DATABASE_URL - PostgreSQL connection string
+# REDIS_URL - Redis connection string
+# SUPABASE_URL - Supabase project URL
+# SUPABASE_SERVICE_ROLE_KEY - Supabase service role key
+# JWT_SECRET - JWT signing secret (32+ characters)
+# ENCRYPTION_KEY - Data encryption key
+
+# Volume mounts for persistent storage
+[[mounts]]
+  source = "agentscan_data"
+  destination = "/data"
+
+# Deploy configuration
+[deploy]
+  release_command = "./bin/migrate up"
+  strategy = "rolling"
+
+# Process groups
+[processes]
+  app = "./bin/api"
+  worker = "./bin/orchestrator"
+
+# Scaling configuration
+[[vm]]
+  processes = ["app"]
+  cpu_kind = "shared"
+  cpus = 2
+  memory = "2gb"
+  size = "shared-cpu-2x"
+
+[[vm]]
+  processes = ["worker"]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "1gb"
+  size = "shared-cpu-1x"
+
+# Auto-scaling
+[http_service.auto_stop_machines]
+  enabled = false
+
+[http_service.auto_start_machines]
+  enabled = true
+
+# Restart policy
+[restart]
+  policy = "on-failure"
+  max_restarts = 3

@@ -1,14 +1,41 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "installCommand": "npm install",
-  "framework": "vite",
-  "rewrites": [
+  "version": 2,
+  "name": "agentscan-frontend",
+  "builds": [
     {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
     }
   ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "https://agentscan-prod.fly.dev/api/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production",
+    "VITE_API_URL": "https://agentscan-prod.fly.dev",
+    "VITE_SUPABASE_URL": "@supabase_url",
+    "VITE_SUPABASE_ANON_KEY": "@supabase_anon_key"
+  },
+  "build": {
+    "env": {
+      "NODE_ENV": "production"
+    }
+  },
+  "functions": {
+    "app/api/**/*.js": {
+      "runtime": "nodejs18.x"
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",
@@ -26,15 +53,36 @@
           "value": "1; mode=block"
         },
         {
-          "key": "Referrer-Policy",
-          "value": "strict-origin-when-cross-origin"
+          "key": "Strict-Transport-Security",
+          "value": "max-age=31536000; includeSubDomains"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://agentscan-prod.fly.dev https://*.supabase.co"
+        }
+      ]
+    },
+    {
+      "source": "/static/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
         }
       ]
     }
   ],
-  "env": {
-    "VITE_API_BASE_URL": "https://agentscan-security-scanner.fly.dev/api/v1",
-    "VITE_SUPABASE_URL": "https://elhiegabhyjduuwpedfd.supabase.co",
-    "VITE_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVsaGllZ2FiaHlqZHV1d3BlZGZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU2MTcxMzgsImV4cCI6MjA3MTE5MzEzOH0.V9fIcKv6Pwt_onUT8iDzFOdj-EtaRc0OSZebt_SC9mA"
-  }
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://agentscan-prod.fly.dev/api/$1"
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/health",
+      "destination": "https://agentscan-prod.fly.dev/health",
+      "permanent": false
+    }
+  ]
 }
